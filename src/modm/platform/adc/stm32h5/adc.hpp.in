@@ -1,0 +1,711 @@
+#ifndef MODM_STM32H5_ADC{{ id }}_HPP
+#define MODM_STM32H5_ADC{{ id }}_HPP
+
+#include <chrono>
+#include <cstdint>
+#include <span>
+#include <utility>
+
+#include "../device.hpp"
+#include <modm/architecture/interface/delay.hpp>
+#include <modm/architecture/interface/register.hpp>
+#include <modm/math/algorithm/enumerate.hpp>
+#include <modm/platform/gpio/connector.hpp>
+
+namespace modm
+{
+namespace platform
+{
+
+/**
+ * Default settle delay for ADC init: busy-wait via modm.
+ * Compatible with colibry::rtos::{Modm,FreeRtos,Host,No}DelayPolicy (`delayUs`).
+ *
+ * Shared by all AdcN instances; guarded so adc_1.hpp + adc_2.hpp can both
+ * be included (e.g. via platform.hpp).
+ */
+#ifndef MODM_STM32H5_ADC_MODM_DELAY_POLICY
+#define MODM_STM32H5_ADC_MODM_DELAY_POLICY
+struct AdcModmDelayPolicy
+{
+	static void delayUs(std::uint32_t microseconds)
+	{
+		modm::delay(std::chrono::microseconds(microseconds));
+	}
+};
+#endif
+
+/**
+ * IRQ callback storage for ADC{{ id }} (one handler per instance, shared across
+ * all DelayPolicy instantiations of Adc{{ id }}).
+ *
+ * Invoked from ADC{{ id }}_IRQHandler. Prefer Adc{{ id }}<>::attachInterruptHandler().
+ */
+struct Adc{{ id }}Irq
+{
+	using Handler = void (*)();
+	static inline Handler handler = [] {};
+};
+
+/**
+ * STM32H5 ADC{{ id }} driver.
+ *
+ * @tparam DelayPolicy Must provide `static void delayUs(uint32_t)`.
+ *         Default: @ref AdcModmDelayPolicy. From colibry you can pass
+ *         `colibry::rtos::ModmDelayPolicy`, `FreeRtosDelayPolicy`,
+ *         `HostDelayPolicy`, or `NoDelayPolicy`.
+ */
+template<class DelayPolicy = AdcModmDelayPolicy>
+class Adc{{ id }}
+{
+public:
+	using DelayPolicyT = DelayPolicy;
+
+	static constexpr uint8_t Resolution = 12;
+
+	/// Datasheet tADCVREG_STUP after enabling ADVREGEN (RM0481).
+	static constexpr std::uint32_t VoltageRegulatorStartup_us = 20;
+
+	/// Channels which can be used with this ADC.
+	enum class Channel : uint8_t
+	{
+%% for channel in channels
+		Channel{{ channel }} = {{ channel }},
+%% endfor
+%% if id == 1
+		VSense            = 16,  ///< Internal temperature sensor (VSENSE)
+		InternalReference = 17,  ///< Internal voltage reference (VREFINT)
+%% elif id == 2
+		BatDiv4           = 16,  ///< VBAT/4 monitoring channel
+		VddCore           = 17,  ///< VDDCORE monitoring channel
+%% endif
+	};
+
+	/// ADC common clock mode (written to ADC12_COMMON->CCR CKMODE field).
+	enum class ClockMode : uint32_t
+	{
+		DoNotChange           = 0xff,  ///< Leave CKMODE unchanged
+		Asynchronous          = 0,     ///< Kernel ADC clock (async); uses ClockSource + Prescaler
+		SynchronousPrescaler1 = ADC_CCR_CKMODE_0,                       ///< AHB/HCLK / 1
+		SynchronousPrescaler2 = ADC_CCR_CKMODE_1,                       ///< AHB/HCLK / 2
+		SynchronousPrescaler4 = ADC_CCR_CKMODE_1 | ADC_CCR_CKMODE_0,    ///< AHB/HCLK / 4
+	};
+
+	/**
+	 * ADC/DAC kernel clock mux (RCC_CCIPR5.ADCDACSEL).
+	 *
+	 * Used only when ClockMode is Asynchronous. Ignored in synchronous mode.
+	 * Encoding from RM0481 for STM32H52x/H56x/H573:
+	 *  000 HCLK, 001 SYSCLK, 010 PLL2R, 011 HSE, 100 HSI_KER, 101 CSI_KER.
+	 */
+	enum class ClockSource : uint32_t
+	{
+		Hclk        = 0,                                              ///< rcc_hclk
+		SystemClock = RCC_CCIPR5_ADCDACSEL_0,                         ///< sys_ck
+		Pll2R       = RCC_CCIPR5_ADCDACSEL_1,                         ///< pll2_r_ck
+		Hse         = RCC_CCIPR5_ADCDACSEL_1 | RCC_CCIPR5_ADCDACSEL_0,///< hse_ck
+		HsiKer      = RCC_CCIPR5_ADCDACSEL_2,                         ///< hsi_ker_ck
+		CsiKer      = RCC_CCIPR5_ADCDACSEL_2 | RCC_CCIPR5_ADCDACSEL_0,///< csi_ker_ck
+		NoClock     = Hclk,  ///< Compatibility alias when sync clock is used (mux ignored)
+	};
+
+	/// Asynchronous kernel-clock prescaler (ADC12_COMMON->CCR PRESC field).
+	enum class Prescaler : uint32_t
+	{
+		Disabled      = 0,
+		Div1          = 0,
+		Div2          = ADC_CCR_PRESC_0,
+		Div4          = ADC_CCR_PRESC_1,
+		Div6          = ADC_CCR_PRESC_1 | ADC_CCR_PRESC_0,
+		Div8          = ADC_CCR_PRESC_2,
+		Div10         = ADC_CCR_PRESC_2 | ADC_CCR_PRESC_0,
+		Div12         = ADC_CCR_PRESC_2 | ADC_CCR_PRESC_1,
+		Div16         = ADC_CCR_PRESC_2 | ADC_CCR_PRESC_1 | ADC_CCR_PRESC_0,
+		Div32         = ADC_CCR_PRESC_3,
+		Div64         = ADC_CCR_PRESC_3 | ADC_CCR_PRESC_0,
+		Div128        = ADC_CCR_PRESC_3 | ADC_CCR_PRESC_1,
+		Div256        = ADC_CCR_PRESC_3 | ADC_CCR_PRESC_1 | ADC_CCR_PRESC_0,
+		Div256AllBits = ADC_CCR_PRESC_3 | ADC_CCR_PRESC_2 | ADC_CCR_PRESC_1 |
+		                ADC_CCR_PRESC_0,  ///< Mask of all PRESC bits (clear-before-set)
+	};
+
+	/**
+	 * Per-channel sampling time (3-bit SMPx field in ADC_SMPR1 / ADC_SMPR2).
+	 *
+	 * If ADC_SMPR1.SMPPLUS is set, Cycles2_5 becomes 3.5 cycles; other settings unchanged.
+	 */
+	enum class SampleTime : uint8_t
+	{
+		Cycles2_5   = 0b000,  ///< 2.5 ADC clock cycles (3.5 if SMPPLUS)
+		Cycles6_5   = 0b001,  ///< 6.5 ADC clock cycles
+		Cycles12_5  = 0b010,  ///< 12.5 ADC clock cycles
+		Cycles24_5  = 0b011,  ///< 24.5 ADC clock cycles
+		Cycles47_5  = 0b100,  ///< 47.5 ADC clock cycles
+		Cycles92_5  = 0b101,  ///< 92.5 ADC clock cycles
+		Cycles247_5 = 0b110,  ///< 247.5 ADC clock cycles
+		Cycles640_5 = 0b111,  ///< 640.5 ADC clock cycles
+	};
+
+	struct SequenceChannel
+	{
+		Channel channel{};
+		SampleTime sampleTime{};
+	};
+
+	/// Hardware offset calibration selection (ADC_CR ADCAL / ADCALDIF).
+	enum class CalibrationMode : uint32_t
+	{
+		SingleEndedInputsMode  = 0,                 ///< Calibrate SE path (ADCALDIF = 0)
+		DifferentialInputsMode = ADC_CR_ADCALDIF,   ///< Calibrate DIFF path (ADCALDIF = 1)
+		DoNotCalibrate         = 0xff,              ///< Skip calibration (software sentinel)
+	};
+
+	/// ADC internal voltage regulator (ADC_CR ADVREGEN).
+	enum class VoltageRegulatorState : uint32_t
+	{
+		Disabled = 0,               ///< Regulator off
+		Enabled  = ADC_CR_ADVREGEN, ///< Regulator on (wait tADCVREG_STUP after enabling)
+	};
+
+	/// ADC deep power-down (ADC_CR DEEPPWD). Default after reset is Enabled.
+	enum class DeepPowerDown : uint32_t
+	{
+		Disabled = 0,              ///< Exit deep power-down (required before ADVREGEN)
+		Enabled  = ADC_CR_DEEPPWD, ///< Enter deep power-down (lowest leakage)
+	};
+
+	/**
+	 * DMA request mode for the regular group (ADC_CFGR DMAEN + DMACFG).
+	 *
+	 * Each completed regular conversion issues a DMA request that copies DR.
+	 * OneShot: DMAEN=1, DMACFG=0 — stops requesting after the programmed
+	 *          DMA length (typical single sequence capture).
+	 * Circular: DMAEN=1, DMACFG=1 — keeps requesting (continuous / free-running).
+	 *
+	 * RM0481: write only when ADSTART = 0 and JADSTART = 0.
+	 */
+	enum class DmaMode : uint32_t
+	{
+		Disabled = 0,
+		OneShot  = ADC_CFGR_DMAEN,
+		Circular = ADC_CFGR_DMACFG | ADC_CFGR_DMAEN,
+		Mask     = Circular,
+	};
+
+	/**
+	 * Dual / multimode selection (ADC12_COMMON->CCR DUAL[4:0]).
+	 *
+	 * Shared by ADC1 and ADC2. On STM32H5 the roles are fixed: ADC1 = master,
+	 * ADC2 = slave. Values are the unshifted field encoding (same bit pattern
+	 * as LL_ADC_MULTI_DUAL_*). Write with ADC_CCR_DUAL_Msk when ADSTART and
+	 * JADSTART are clear on both ADCs (RM0481).
+	 *
+	 * In dual simultaneous modes, the hardware trigger / software start for
+	 * the synced group is taken from the master; the slave is started by the
+	 * dual logic (do not also arm an independent trigger on the slave for
+	 * that same group).
+	 *
+	 * For independent regular groups + synchronized injected: use
+	 * @ref InjectedSimultaneousOnly — configure injected trigger on ADC1 only;
+	 * regular triggers remain per-ADC.
+	 */
+	enum class DualMode : uint32_t
+	{
+		/// ADC1 and ADC2 fully independent (dual disabled).
+		Independent = 0x00u,  // LL_ADC_MULTI_INDEPENDENT
+
+		/// Regular simultaneous + injected simultaneous.
+		RegularSimultaneousInjectedSimultaneous = 0x01u,  // LL_ADC_MULTI_DUAL_REG_SIM_INJ_SIM
+
+		/// Regular simultaneous + injected alternate trigger.
+		RegularSimultaneousInjectedAlternateTrigger = 0x02u,  // LL_ADC_MULTI_DUAL_REG_SIM_INJ_ALT
+
+		/// Regular interleaved + injected simultaneous.
+		RegularInterleavedInjectedSimultaneous = 0x03u,  // LL_ADC_MULTI_DUAL_REG_INT_INJ_SIM
+
+		/// Injected simultaneous only; regular groups stay independent.
+		InjectedSimultaneousOnly = 0x05u,  // LL_ADC_MULTI_DUAL_INJ_SIMULT
+
+		/// Regular simultaneous only; injected groups stay independent.
+		RegularSimultaneousOnly = 0x06u,  // LL_ADC_MULTI_DUAL_REG_SIMULT
+
+		/// Regular interleaved only.
+		InterleavedOnly = 0x07u,  // LL_ADC_MULTI_DUAL_REG_INTERL
+
+		/// Injected alternate trigger only (external trigger; not SW start).
+		InjectedAlternateTriggerOnly = 0x09u,  // LL_ADC_MULTI_DUAL_INJ_ALTERN
+	};
+
+	/**
+	 * Hardware-trigger edge detect for regular conversions (ADC_CFGR EXTEN field).
+	 *
+	 * In STM32 naming, "external trigger" means external to software ADSTART
+	 * (a hardware trigger), not necessarily an off-chip pin. The source is
+	 * selected separately by EXTSEL in the same ADC_CFGR register (timer TRGO,
+	 * EXTI, …). EXTEN only configures polarity / enable of that selected event:
+	 *  00 disabled (software start), 01 rising, 10 falling, 11 both edges.
+	 *
+	 * Values are the unshifted EXTEN field; shift by ADC_CFGR_EXTEN_Pos when
+	 * writing ADC_CFGR (same pattern as the F3/H7 modm driver).
+	 */
+	enum class ExternalTriggerPolarity : uint32_t
+	{
+		NoTriggerDetection   = 0x0u,
+		RisingEdge           = 0x1u,
+		FallingEdge          = 0x2u,
+		RisingAndFallingEdge = 0x3u,
+	};
+
+	/// Interrupt enables (ADC_IER). Same bit layout as InterruptFlag in ADC_ISR.
+	enum class Interrupt : uint32_t
+	{
+		Ready                              = ADC_IER_ADRDYIE,
+		EndOfSampling                      = ADC_IER_EOSMPIE,
+		EndOfRegularConversion             = ADC_IER_EOCIE,
+		EndOfRegularSequenceOfConversions  = ADC_IER_EOSIE,
+		Overrun                            = ADC_IER_OVRIE,
+		EndOfInjectedConversion            = ADC_IER_JEOCIE,
+		EndOfInjectedSequenceOfConversions = ADC_IER_JEOSIE,
+		AnalogWatchdog1                    = ADC_IER_AWD1IE,
+		AnalogWatchdog2                    = ADC_IER_AWD2IE,
+		AnalogWatchdog3                    = ADC_IER_AWD3IE,
+		InjectedContextQueueOverflow       = ADC_IER_JQOVFIE,
+	};
+	MODM_FLAGS32(Interrupt);
+
+	/// Interrupt / status flags (ADC_ISR). Write 1 to clear (w1c).
+    // Raised whether or not Interrupt + NVIC is enabled or not. 
+	enum class InterruptFlag : uint32_t
+	{
+		Ready                              = ADC_ISR_ADRDY,
+		EndOfSampling                      = ADC_ISR_EOSMP,
+		EndOfRegularConversion             = ADC_ISR_EOC,
+		EndOfRegularSequenceOfConversions  = ADC_ISR_EOS,
+		Overrun                            = ADC_ISR_OVR,
+		EndOfInjectedConversion            = ADC_ISR_JEOC,
+		EndOfInjectedSequenceOfConversions = ADC_ISR_JEOS,
+		AnalogWatchdog1                    = ADC_ISR_AWD1,
+		AnalogWatchdog2                    = ADC_ISR_AWD2,
+		AnalogWatchdog3                    = ADC_ISR_AWD3,
+		InjectedContextQueueOverflow       = ADC_ISR_JQOVF,
+		All = ADC_ISR_ADRDY | ADC_ISR_EOSMP | ADC_ISR_EOC | ADC_ISR_EOS | ADC_ISR_OVR |
+		      ADC_ISR_JEOC | ADC_ISR_JEOS | ADC_ISR_AWD1 | ADC_ISR_AWD2 | ADC_ISR_AWD3 |
+		      ADC_ISR_JQOVF,
+	};
+	MODM_FLAGS32(InterruptFlag);
+
+
+    /**
+	 * Regular-group hardware trigger source (ADC_CFGR EXTSEL[4:0]).
+	 *
+	 * Values are the unshifted EXTSEL encoding; shift by ADC_CFGR_EXTSEL_Pos
+	 * when writing ADC_CFGR. Mapping from RM0481 / STM32H5 ADC trigger table.
+	 *
+	 * TRGO  = Timer TRiGger Output (master-mode event to other peripherals).
+	 * TRGO2 = second trigger output on advanced timers (e.g. TIM1).
+	 * CCx   = timer capture/compare channel x match event.
+	 */
+	enum class ExternalTriggerEvent : uint32_t
+	{
+		Tim1Cc1   = 0x00u,  ///< TIM1 capture/compare 1
+		Tim1Cc2   = 0x01u,  ///< TIM1 capture/compare 2
+		Tim1Cc3   = 0x02u,  ///< TIM1 capture/compare 3
+		Tim2Cc2   = 0x03u,  ///< TIM2 capture/compare 2
+		Tim3Trgo  = 0x04u,  ///< TIM3 trigger output (TRGO)
+		Exti11    = 0x06u,  ///< EXTI line 11
+		Tim1Trgo  = 0x09u,  ///< TIM1 trigger output (TRGO)
+		Tim1Trgo2 = 0x0Au,  ///< TIM1 trigger output 2 (TRGO2)
+		Tim2Trgo  = 0x0Bu,  ///< TIM2 trigger output (TRGO)
+		Tim6Trgo  = 0x0Du,  ///< TIM6 trigger output (TRGO)
+		Tim15Trgo = 0x0Eu,  ///< TIM15 trigger output (TRGO)
+		Tim3Cc4   = 0x0Fu,  ///< TIM3 capture/compare 4
+	};
+
+	/**
+	 * Programmable channel offset unit (ADC_OFR1…OFR4).
+	 *
+	 * Each slot can hold an offset value + channel select for hardware
+	 * offset compensation (distinct from ADCAL self-calibration).
+	 */
+	enum class OffsetSlot : uint8_t
+	{
+		Slot0 = 0,  ///< ADC_OFR1
+		Slot1 = 1,  ///< ADC_OFR2
+		Slot2 = 2,  ///< ADC_OFR3
+		Slot3 = 3,  ///< ADC_OFR4
+	};
+
+public:
+	template< class... Signals > 
+    inline static void connect() {
+		using Connector = GpioConnector<Peripheral::Adc{{ id }}, Signals...>;
+		Connector::connect();
+	}
+
+	/**
+	 * Initialize and enable the ADC.
+	 *
+	 * Sequence (RM0481): enable AHB clock → optional kernel mux → exit DEEPPWD →
+	 * enable ADVREGEN → wait tADCVREG_STUP (via class DelayPolicy) →
+	 * optional calibrate → ADEN.
+	 *
+	 * Defaults match H5 register reset values where applicable:
+	 *  - ClockMode::DoNotChange → leave ADC12_COMMON->CCR (reset: async, PRESC=0)
+	 *  - ClockSource::Hclk → RCC_CCIPR5.ADCDACSEL reset value
+	 *  - Prescaler::Disabled → PRESC = 0 (÷1), only used if ClockMode::Asynchronous
+	 *  - CalibrationMode::DoNotCalibrate → no ADCAL (reset: not calibrated)
+	 */
+	static inline void
+	initialize(const ClockMode clk = ClockMode::DoNotChange,
+			   const ClockSource clk_src = ClockSource::Hclk,
+			   const Prescaler pre = Prescaler::Disabled,
+			   const CalibrationMode cal = CalibrationMode::DoNotCalibrate,
+			   const bool blocking = true);
+
+	static inline void disable(const bool blocking = true);
+
+	/// Set ADC_CCR PRESC (async kernel clock divider only).
+	static inline void setPrescaler(const Prescaler pre);
+
+%% if id == 1
+	/**
+	 * Set dual / multimode (ADC12_COMMON->CCR DUAL). Master (ADC1) only.
+	 *
+	 * @return false if ADC1 or ADC2 still has ADSTART/JADSTART set (RM0481:
+	 *         DUAL writable only when both are idle).
+	 */
+	static inline bool setDualMode(DualMode mode);
+
+	/// @return Current CCR.DUAL field as DualMode.
+	static inline DualMode getDualMode();
+%% endif
+
+	/// @return true if ADC_ISR.ADRDY is set
+	static inline bool isReady();
+
+	static inline void calibrate(const CalibrationMode mode, const bool blocking = true);
+
+	/**
+	 * Change presentation of the ADC conversion result in ADC_DR (CFGR.ALIGN).
+	 *
+	 * @param enable  true → left-aligned (MSBs toward bit 15);
+	 *                false → right-aligned (LSBs at bit 0, reset default).
+	 *
+	 * For 12-bit: right → data in DR[11:0]; left → data in DR[15:4].
+	 * May be changed only with ADC disabled, or enabled with no conversion ongoing.
+	 */
+	static inline void setLeftAdjustResult(const bool enable);
+
+	/**
+	 * Set only the sample time (SMPx) for a channel.
+	 *
+	 * Does not touch the regular sequencer (SQR1–SQR4). Use this when a multi-
+	 * channel sequence is already programmed and you only need to change how
+	 * long that channel is sampled.
+	 *
+	 * @return false if the channel number is out of range (> 19).
+	 */
+	static inline bool configureChannel(Channel channel, SampleTime sampleTime);
+
+	/**
+	 * Configure sample time and select this channel as the only regular conversion.
+	 *
+	 * Overwrites SQR1 so that the regular sequence has length 1 and rank 1
+	 * (SQ1) is @p channel — i.e. this becomes the unique channel that will be
+	 * converted on a regular group start. Any previous multi-channel sequence
+	 * is discarded.
+	 *
+	 * To change sample time without altering the sequence, use
+	 * @ref configureChannel instead.
+	 */
+	static inline bool setChannel(Channel channel, SampleTime sampleTime = SampleTime::Cycles2_5);
+
+	/**
+	 * Program a regular multi-channel conversion sequence (1–16 ranks).
+	 *
+	 * Sets SQR1.L = size−1 and fills SQ1… in rank order across SQR1–SQR4,
+	 * and configures each channel’s sample time via configureChannel.
+	 *
+	 * Example (map GPIOs to channels, then program the sequence):
+	 * @code
+	 * using Adc = modm::platform::Adc{{ id }}<>;
+	 * const Adc::SequenceChannel sequence[] = {
+	 *     { Adc::getPinChannel<GpioA0>(), Adc::SampleTime::Cycles47_5 },
+	 *     { Adc::getPinChannel<GpioA1>(), Adc::SampleTime::Cycles47_5 },
+	 *     { Adc::getPinChannel<GpioB0>(), Adc::SampleTime::Cycles47_5 },
+	 * };
+	 * Adc::setChannelSequence(sequence);
+	 * @endcode
+	 *
+	 * @return false if @p sequence is empty, longer than 16, or any channel
+	 *         is out of range.
+	 */
+	static inline bool setChannelSequence(std::span<const SequenceChannel> sequence);
+
+	/**
+	 * Map a GPIO type to this ADC instance’s channel number (compile-time).
+	 *
+	 * Looks up `detail::AdcChannel<Gpio::Data, Peripheral::Adc{{ id }}, …>`
+	 * generated from the device pinout. On H5 each pin can expose Inp (positive)
+	 * and/or Inn (negative) for differential; this returns the **positive**
+	 * single-ended channel only.
+	 *
+	 * Fails to compile if that pin has no ADC{{ id }} connection.
+	 *
+	 * @warning Differential (Inn) mapping is not selected here.
+	 */
+	template<class Gpio>
+	static inline constexpr Channel getPinChannel() {
+		using modm::platform::detail::AdcPolarity;
+		constexpr int8_t channel{
+			detail::AdcChannel<typename Gpio::Data, Peripheral::Adc{{ id }}, AdcPolarity::Positive>};
+		static_assert(channel >= 0, "Adc{{ id }} does not have a channel for this pin!");
+		return Channel(channel);
+	}
+
+
+
+
+	/// setChannel(getPinChannel<Gpio>(), sampleTime) — single-channel sequence.
+	template<class Gpio>
+	static inline bool setPinChannel(SampleTime sampleTime = SampleTime::Cycles2_5) {
+		return setChannel(getPinChannel<Gpio>(), sampleTime);
+	}
+
+	/**
+	 * Enable continuous (free-running) regular conversions (CFGR.CONT).
+	 *
+	 * When enabled, after ADSTART the regular group restarts automatically
+	 * when the sequence finishes. When disabled, each ADSTART runs the
+	 * sequence once (single-shot).
+	 *
+	 * @pre ADC clock started and ADC enabled with initialize().
+	 */
+	static inline void setFreeRunningMode(bool enable);
+
+	/**
+	 * Start the regular conversion group (ADC_CR.ADSTART).
+	 *
+	 * Clears EOC/EOSMP/OVR/EOS first so completion flags reflect this run.
+	 * @pre Channel/sequence configured; ADC enabled with initialize().
+	 */
+	static inline void startConversion();
+
+	/**
+	 * Stop regular and injected conversions (ADSTP + JADSTP), wait until done.
+	 */
+	static inline void stopConversion();
+
+	/// @return true if ADC_ISR.EOC is set (one regular rank finished).
+	static inline bool isConversionFinished();
+
+	/// @return true if ADC_ISR.EOS is set (full regular sequence finished).
+	static inline bool isConversionSequenceFinished();
+
+	/**
+	 * Enable hardware trigger for the regular group (CFGR EXTSEL + EXTEN).
+	 *
+	 * @p externalTriggerPolarity / @p externalTriggerEvent are unshifted field
+	 * values; shifted into place here.
+	 *
+	 * You must still call startConversion() afterward: that sets ADSTART and
+	 * arms the ADC to wait for the selected edge. With CONT=0 (default), each
+	 * trigger then runs one full sequence; you do not call startConversion()
+	 * again per trigger. Call stopConversion() only when you want to cancel /
+	 * disarm (optional — not required just because a trigger is configured).
+	 * Use disableRegularConversionExternalTrigger() to go back to software
+	 * ADSTART-only starts.
+	 */
+	static inline void enableRegularConversionExternalTrigger(
+			ExternalTriggerPolarity externalTriggerPolarity,
+			ExternalTriggerEvent externalTriggerEvent);
+
+	/// Clear EXTEN and EXTSEL → software ADSTART only (no HW trigger).
+	static inline void disableRegularConversionExternalTrigger();
+
+	/**
+	 * Start the injected conversion group (ADC_CR.JADSTART).
+	 *
+	 * Clears JEOC/JEOS first. @pre Injected ranks configured in JSQR (and
+	 * sample times); ADC enabled. In dual injected simultaneous mode, start
+	 * on the master (ADC1); the slave follows in hardware.
+	 */
+	static inline void startInjectedConversionSequence();
+
+	/**
+	 * Set one injected sequencer rank (JSQ1…JSQ4) and its sample time.
+	 *
+	 * @param index  Rank index 0..3
+	 * @return false if index or channel is invalid
+	 */
+	static inline bool setInjectedConversionChannel(uint8_t index, Channel channel,
+			SampleTime sampleTime);
+
+	/// setInjectedConversionChannel(index, getPinChannel<Gpio>(), sampleTime)
+	template<class Gpio>
+	static inline bool setInjectedConversionChannel(uint8_t index, SampleTime sampleTime)
+	{
+		return setInjectedConversionChannel(index, getPinChannel<Gpio>(), sampleTime);
+	}
+
+	/**
+	 * Set injected sequence length JL (1..4 conversions).
+	 * Does not clear JSQx or JEXT* fields.
+	 */
+	static inline bool setInjectedConversionSequenceLength(uint8_t length);
+
+	/**
+	 * Program the full injected sequence (1–4 ranks), like setChannelSequence
+	 * for the regular group.
+	 *
+	 * Sets JL = size−1 and JSQ1… for each entry; preserves JEXTSEL/JEXTEN.
+	 *
+	 * Example (map GPIOs to channels, then program the injected sequence):
+	 * @code
+	 * using Adc = modm::platform::Adc{{ id }}<>;
+	 * const Adc::SequenceChannel inj[] = {
+	 *     { Adc::getPinChannel<GpioA0>(), Adc::SampleTime::Cycles47_5 },
+	 *     { Adc::getPinChannel<GpioA1>(), Adc::SampleTime::Cycles47_5 },
+	 * };
+	 * Adc::setInjectedConversionSequence(inj);
+	 * @endcode
+	 *
+	 * @return false if empty, longer than 4, or any channel is out of range
+	 */
+	static inline bool setInjectedConversionSequence(std::span<const SequenceChannel> sequence);
+
+	/**
+	 * Enable hardware trigger for the injected group (JSQR JEXTSEL + JEXTEN).
+	 *
+	 * Enum values are unshifted; shifted into JSQR here. Still call
+	 * startInjectedConversionSequence() afterward to set JADSTART and arm
+	 * waiting for the edge. @note ExternalTriggerEvent encodings were listed
+	 * for regular EXTSEL; confirm the injected JEXTSEL table in RM0481 for
+	 * the same numeric code.
+	 */
+	static inline void enableInjectedConversionExternalTrigger(
+			ExternalTriggerPolarity externalTriggerPolarity,
+			ExternalTriggerEvent externalTriggerEvent);
+
+	/// Clear JEXTEN and JEXTSEL → software JADSTART only.
+	static inline void disableInjectedConversionExternalTrigger();
+
+	/// @return true if ADC_ISR.JEOS is set (injected sequence finished).
+	static inline bool isInjectedConversionFinished();
+
+	/**
+	 * Read the regular group data register (ADC_DR).
+	 *
+	 * @pre A conversion has completed (EOC/EOS); reading DR also clears EOC
+	 *      when EOCS behavior applies.
+	 */
+	static inline auto getValue()
+	{
+		return ADC{{ id }}->DR;
+	}
+
+	/**
+	 * Read an injected conversion result (JDR1…JDR4).
+	 *
+	 * @param index Injected sequence rank (0…3). Out-of-range indexes return JDR4.
+	 * @pre The injected conversion for that rank has completed.
+	 */
+	static inline auto getInjectedConversionValue(uint8_t index)
+	{
+		switch (index) {
+		case 0:
+			return ADC{{ id }}->JDR1;
+		case 1:
+			return ADC{{ id }}->JDR2;
+		case 2:
+			return ADC{{ id }}->JDR3;
+		case 3:
+			[[fallthrough]];
+		default:
+			return ADC{{ id }}->JDR4;
+		}
+	}
+
+	/**
+	 * Program one of the four HW channel-offset units (ADC_OFRn).
+	 *
+	 * Applies ±|offset| to conversions of @p channel before DR/JDR.
+	 * Positive @p offset sets OFFSETPOS (add); negative clears it (subtract).
+	 * @p saturate enables SATEN (clamp to 0…0xFFF).
+	 *
+	 * @return false if a regular/injected conversion is ongoing (ADSTART/JADSTART)
+	 *         or @p slot is invalid. Must be programmed while conversions are stopped.
+	 */
+	static inline bool enableChannelOffset(OffsetSlot slot, Channel channel,
+			int16_t offset, bool saturate = false);
+
+	/// enableChannelOffset(slot, getPinChannel<Gpio>(), offset, saturate)
+	template<class Gpio>
+	static inline bool enableChannelOffset(OffsetSlot slot, int16_t offset,
+			bool saturate = false)
+	{
+		return enableChannelOffset(slot, getPinChannel<Gpio>(), offset, saturate);
+	}
+
+	/// Clear OFFSET_EN on the given OFR slot (conversions must be stopped).
+	static inline bool disableChannelOffset(OffsetSlot slot);
+
+	/// @return Pointer to ADC_DR for DMA peripheral address setup.
+	static inline volatile uint32_t* dataRegister()
+	{
+		return &(ADC{{ id }}->DR);
+	}
+
+	/**
+	 * Configure regular-group DMA requests (CFGR DMAEN/DMACFG).
+	 *
+	 * Used by colibry::platform::AdcDma. Program DMA channel first, then call
+	 * this, then startConversion(). Prefer conversions stopped (no ADSTART/
+	 * JADSTART) when changing mode.
+	 */
+	static inline void setDmaMode(DmaMode mode);
+
+	/// Enable/disable the NVIC vector for this ADC instance (ADC1_IRQn / ADC2_IRQn).
+	static inline void enableInterruptVector(uint32_t priority, bool enable = true);
+
+	/// Set bits in ADC_IER (peripheral interrupt enables).
+	static inline void enableInterrupt(Interrupt_t interrupt);
+
+	/// Clear bits in ADC_IER.
+	static inline void disableInterrupt(Interrupt_t interrupt);
+
+	using InterruptHandler = Adc{{ id }}Irq::Handler;
+
+	/**
+	 * Install the callback run from ADC{{ id }}_IRQHandler.
+	 *
+	 * Does not enable NVIC or IER — call enableInterruptVector() and
+	 * enableInterrupt(...) separately. Passing nullptr installs a no-op.
+	 *
+	 * @code
+	 * void onAdc() {
+	 *     using Adc = modm::platform::Adc{{ id }}<>;
+	 *     Adc::acknowledgeInterruptFlags(Adc::getInterruptFlags());
+	 * }
+	 * Adc{{ id }}<>::attachInterruptHandler(onAdc);
+	 * Adc{{ id }}<>::enableInterruptVector(5);
+	 * Adc{{ id }}<>::enableInterrupt(Adc{{ id }}<>::Interrupt::EndOfRegularSequenceOfConversions);
+	 * @endcode
+	 */
+	static void attachInterruptHandler(InterruptHandler handler)
+	{
+		Adc{{ id }}Irq::handler = handler ? handler : InterruptHandler([] {});
+	}
+
+	static inline InterruptFlag_t getInterruptFlags();
+
+	// Clears the specified interrupt flags in ADC_ISR.
+	static inline void acknowledgeInterruptFlags(const InterruptFlag_t flags);
+};
+
+}  // namespace platform
+}  // namespace modm
+
+#include "adc_{{ id }}_impl.hpp"
+
+#endif

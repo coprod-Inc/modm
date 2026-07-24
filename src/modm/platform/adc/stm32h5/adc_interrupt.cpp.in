@@ -1,0 +1,19 @@
+/*
+ * Copyright (c) 2026, coprod LLC
+ *
+ * This file is part of the modm project.
+ *
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ */
+// ----------------------------------------------------------------------------
+
+#include "adc_{{ id }}.hpp"
+#include <modm/architecture/interface/interrupt.hpp>
+
+// H5: ADC1 and ADC2 each have a dedicated NVIC vector (ADC1_IRQn / ADC2_IRQn).
+MODM_ISR(ADC{{ id }})
+{
+	modm::platform::Adc{{ id }}Irq::handler();
+}

@@ -1,0 +1,487 @@
+
+
+#ifndef MODM_STM32H5_ADC{{ id }}_HPP
+#	error 	"Don't include this file directly, use 'adc_{{ id }}.hpp' instead!"
+#endif
+
+template<class DelayPolicy>
+void modm::platform::Adc{{ id }}<DelayPolicy>::initialize(const ClockMode clk,
+                                                     const ClockSource clk_src,
+                                                     const Prescaler pre,
+                                                     const CalibrationMode cal,
+                                                     const bool blocking){
+	uint32_t tmp = 0;
+
+	// Turn on the ADC peripheral (AHB) clock so registers are accessible.
+	// Shared ADC1+ADC2 enable bit on STM32H5.
+	RCC->AHB2ENR |= RCC_AHB2ENR_ADCEN;
+
+	// ClockMode (ADC12_COMMON->CCR.CKMODE) + optional async kernel mux / PRESC.
+	// ClockSource (RCC_CCIPR5.ADCDACSEL) and PRESC only matter in Asynchronous mode.
+	if (clk != ClockMode::DoNotChange) {
+		if (clk == ClockMode::Asynchronous) {
+			// If the clock mode is asynchronous, we need to select the clock source.
+			tmp = RCC->CCIPR5;
+			tmp &= ~RCC_CCIPR5_ADCDACSEL_Msk;
+			tmp |= static_cast<uint32_t>(clk_src);
+			RCC->CCIPR5 = tmp;
+
+			setPrescaler(pre);
+		}
+
+		// Setting the clock mode in the common clock register.
+		tmp = ADC12_COMMON->CCR;
+		tmp &= ~ADC_CCR_CKMODE;
+		tmp |= static_cast<uint32_t>(clk);
+		ADC12_COMMON->CCR = tmp;
+	}
+
+	// Exit deep power-down, then enable the internal voltage regulator.
+	// Must leave DEEPPWD before ADVREGEN; wait tADCVREG_STUP via DelayPolicy.
+	ADC{{ id }}->CR &= ~ADC_CR_DEEPPWD;
+	ADC{{ id }}->CR |= ADC_CR_ADVREGEN;
+    // Wait for the voltage regulator to start up as said in the RM0481
+    // Has to wait 20 us before calibration or enabling the ADC
+	DelayPolicy::delayUs(VoltageRegulatorStartup_us);
+
+	// Drop any stale ADRDY before calibrate / ADEN.
+	acknowledgeInterruptFlags(InterruptFlag::Ready);
+
+	// Calibration must run while ADEN = 0; always wait for ADCAL to clear here.
+	calibrate(cal, true);
+
+	// Enable the ADC. ADRDY is set by hardware when enable completes.
+	ADC{{ id }}->CR |= ADC_CR_ADEN;
+	if (blocking) {
+		// ADEN is only accepted a few ADC clocks after ADCAL clears; re-set in
+		// the loop so slow ADC clocks vs CPU still succeed.
+		while (not isReady()) {
+			ADC{{ id }}->CR |= ADC_CR_ADEN;
+		}
+		acknowledgeInterruptFlags(InterruptFlag::Ready);
+	}
+}
+
+template<class DelayPolicy>
+void modm::platform::Adc{{ id }}<DelayPolicy>::disable(const bool blocking){
+	// Request disable; hardware clears ADEN, then clears ADDIS when done.
+	ADC{{ id }}->CR |= ADC_CR_ADDIS;
+	if (blocking) {
+		while (ADC{{ id }}->CR & ADC_CR_ADDIS) {
+		}
+	}
+
+	// Shared ADC1+ADC2 AHB clock bit — turning it off affects both instances.
+	RCC->AHB2ENR &= ~RCC_AHB2ENR_ADCEN;
+}
+
+template<class DelayPolicy>
+bool modm::platform::Adc{{ id }}<DelayPolicy>::isReady() {
+	return static_cast<bool>(getInterruptFlags() & InterruptFlag::Ready);
+}
+
+template<class DelayPolicy>
+typename modm::platform::Adc{{ id }}<DelayPolicy>::InterruptFlag_t modm::platform::Adc{{ id }}<DelayPolicy>::getInterruptFlags() {
+	return InterruptFlag_t(ADC{{ id }}->ISR);
+}
+
+template<class DelayPolicy>
+void modm::platform::Adc{{ id }}<DelayPolicy>::setPrescaler(const Prescaler pre) {
+	uint32_t tmp = ADC12_COMMON->CCR;
+	tmp &= ~static_cast<uint32_t>(Prescaler::Div256AllBits);
+	tmp |= static_cast<uint32_t>(pre);
+	ADC12_COMMON->CCR = tmp;
+}
+
+%% if id == 1
+template<class DelayPolicy>
+bool
+modm::platform::Adc{{ id }}<DelayPolicy>::setDualMode(DualMode mode)
+{
+	// Dual couples ADC1 (master) and ADC2 (slave); both must be idle.
+	constexpr uint32_t converting = ADC_CR_ADSTART | ADC_CR_JADSTART;
+	if ((ADC1->CR & converting) or (ADC2->CR & converting)) {
+		return false;
+	}
+
+	uint32_t tmp = ADC12_COMMON->CCR;
+	tmp &= ~ADC_CCR_DUAL_Msk;
+	tmp |= (static_cast<uint32_t>(mode) & ADC_CCR_DUAL_Msk);
+	ADC12_COMMON->CCR = tmp;
+	return true;
+}
+
+template<class DelayPolicy>
+typename modm::platform::Adc{{ id }}<DelayPolicy>::DualMode
+modm::platform::Adc{{ id }}<DelayPolicy>::getDualMode()
+{
+	return DualMode(ADC12_COMMON->CCR & ADC_CCR_DUAL_Msk);
+}
+%% endif
+
+template<class DelayPolicy>
+void modm::platform::Adc{{ id }}<DelayPolicy>::acknowledgeInterruptFlags(const InterruptFlag_t flags) {
+	// ADC_ISR is write-1-to-clear; writing 0 leaves a flag unchanged.
+	ADC{{ id }}->ISR = flags.value;
+}
+
+template<class DelayPolicy>
+void modm::platform::Adc{{ id }}<DelayPolicy>::calibrate(const CalibrationMode mode,
+                                                    const bool blocking)
+{
+	if (mode == CalibrationMode::DoNotCalibrate) {
+		return;
+	}
+
+	// ADCAL starts offset calibration; ADCALDIF selects SE (0) vs DIFF path.
+	ADC{{ id }}->CR |= ADC_CR_ADCAL | static_cast<uint32_t>(mode);
+	if (blocking) {
+		// Hardware clears ADCAL when calibration completes.
+		while (ADC{{ id }}->CR & ADC_CR_ADCAL) {
+		}
+	}
+}
+
+template<class DelayPolicy>
+void modm::platform::Adc{{ id }}<DelayPolicy>::setLeftAdjustResult(const bool enable) {
+	if (enable) {
+		ADC{{ id }}->CFGR |= ADC_CFGR_ALIGN;
+	} else {
+		ADC{{ id }}->CFGR &= ~ADC_CFGR_ALIGN;
+	}
+}
+
+template<class DelayPolicy>
+bool modm::platform::Adc{{ id }}<DelayPolicy>::configureChannel(Channel channel,
+                                                           SampleTime sampleTime)
+{
+	const auto ch = static_cast<uint8_t>(channel);
+	// H5: IN0–IN19 (SMPR1: 0–9, SMPR2: 10–19; no PCSEL on this family).
+	if (ch > 19) {
+		return false;
+	}
+    // ADC_SMPRx_SMPn: Mask of the Sampling time for channel n (3 bits)
+	uint32_t tmpreg = 0;
+	if (ch < 10) {
+		tmpreg = ADC{{ id }}->SMPR1 & ~((ADC_SMPR1_SMP0) << (ch * 3)); // Clear the bits for the channel
+		tmpreg |= static_cast<uint32_t>(sampleTime) << (ch * 3); // Set the sample time
+		ADC{{ id }}->SMPR1 = tmpreg;
+	} else {
+		tmpreg = ADC{{ id }}->SMPR2 & ~((ADC_SMPR2_SMP10) << ((ch - 10) * 3)); // Clear the bits for the channel
+		tmpreg |= static_cast<uint32_t>(sampleTime) << ((ch - 10) * 3); // Set the sample time
+		ADC{{ id }}->SMPR2 = tmpreg;
+	}
+	return true;
+}
+
+template<class DelayPolicy>
+bool modm::platform::Adc{{ id }}<DelayPolicy>::setChannel(Channel channel,
+                                                     SampleTime sampleTime)
+{
+	if (!configureChannel(channel, sampleTime)) {
+		return false;
+	}
+
+	// Single-channel regular sequence: L = 0 (length 1), SQ1 = channel.
+	ADC{{ id }}->SQR1 =
+		(static_cast<uint32_t>(channel) << ADC_SQR1_SQ1_Pos) & ADC_SQR1_SQ1_Msk;
+	return true;
+}
+
+template<class DelayPolicy>
+bool modm::platform::Adc{{ id }}<DelayPolicy>::setChannelSequence(
+	std::span<const SequenceChannel> sequence) {
+
+	if (sequence.size() > 16 || sequence.size() == 0) {
+		return false;
+	}
+
+	// L = number of conversions − 1; SQ fields filled below.
+	ADC{{ id }}->SQR1 = sequence.size() - 1;
+
+	for (const auto [i, config] : modm::enumerate(sequence)) {
+		const auto [channel, sampleTime] = config;
+		if (!configureChannel(channel, sampleTime)) {
+			return false;
+		}
+
+		// Each SQx field is 6 bits apart (5-bit channel + 1-bit gap).
+		if (i < 4) {
+			const auto shift = (i + 1) * 6;
+			const auto mask = 0b111111u << shift;
+			ADC{{ id }}->SQR1 = (ADC{{ id }}->SQR1 & ~mask) |
+			                   (std::to_underlying(channel) << shift);
+		} else if (i < 9) {
+			const auto shift = (i - 4) * 6;
+			const auto mask = 0b111111u << shift;
+			ADC{{ id }}->SQR2 = (ADC{{ id }}->SQR2 & ~mask) |
+			                   (std::to_underlying(channel) << shift);
+		} else if (i < 14) {
+			const auto shift = (i - 9) * 6;
+			const auto mask = 0b111111u << shift;
+			ADC{{ id }}->SQR3 = (ADC{{ id }}->SQR3 & ~mask) |
+			                   (std::to_underlying(channel) << shift);
+		} else {
+			const auto shift = (i - 14) * 6;
+			const auto mask = 0b111111u << shift;
+			ADC{{ id }}->SQR4 = (ADC{{ id }}->SQR4 & ~mask) |
+			                   (std::to_underlying(channel) << shift);
+		}
+	}
+	return true;
+}
+
+template<class DelayPolicy>
+void
+modm::platform::Adc{{ id }}<DelayPolicy>::setFreeRunningMode(const bool enable)
+{
+	if (enable) {
+		ADC{{ id }}->CFGR |= ADC_CFGR_CONT;
+	} else {
+		ADC{{ id }}->CFGR &= ~ADC_CFGR_CONT;
+	}
+}
+
+template<class DelayPolicy>
+void
+modm::platform::Adc{{ id }}<DelayPolicy>::startConversion()
+{
+	acknowledgeInterruptFlags(InterruptFlag::EndOfRegularConversion |
+			InterruptFlag::EndOfSampling | InterruptFlag::Overrun |
+			InterruptFlag::EndOfRegularSequenceOfConversions);
+	ADC{{ id }}->CR |= ADC_CR_ADSTART;
+}
+
+template<class DelayPolicy>
+void
+modm::platform::Adc{{ id }}<DelayPolicy>::stopConversion()
+{
+	ADC{{ id }}->CR |= ADC_CR_ADSTP | ADC_CR_JADSTP;
+	while ((ADC{{ id }}->CR & (ADC_CR_ADSTP | ADC_CR_JADSTP)) != 0) {
+	}
+
+	acknowledgeInterruptFlags(InterruptFlag::EndOfRegularConversion |
+			InterruptFlag::EndOfSampling | InterruptFlag::Overrun);
+}
+
+template<class DelayPolicy>
+bool modm::platform::Adc{{ id }}<DelayPolicy>::isConversionFinished() {
+	// EOC: end of one regular conversion (one sequencer rank).
+	return static_cast<bool>(getInterruptFlags() & InterruptFlag::EndOfRegularConversion);
+}
+
+template<class DelayPolicy>
+bool modm::platform::Adc{{ id }}<DelayPolicy>::isConversionSequenceFinished() {
+	// EOS: end of the full regular sequence (all L+1 ranks).
+	return static_cast<bool>(getInterruptFlags() & InterruptFlag::EndOfRegularSequenceOfConversions);
+}
+
+template<class DelayPolicy>
+void
+modm::platform::Adc{{ id }}<DelayPolicy>::enableRegularConversionExternalTrigger(
+	ExternalTriggerPolarity externalTriggerPolarity,
+	ExternalTriggerEvent externalTriggerEvent)
+{
+	// Enums hold unshifted EXTEN[1:0] / EXTSEL[4:0]; place into CFGR.
+	const auto polarity =
+		(static_cast<uint32_t>(externalTriggerPolarity) << ADC_CFGR_EXTEN_Pos);
+	const auto externalTrigger =
+		(static_cast<uint32_t>(externalTriggerEvent) << ADC_CFGR_EXTSEL_Pos);
+	const auto mask = ADC_CFGR_EXTEN_Msk | ADC_CFGR_EXTSEL_Msk;
+	ADC{{ id }}->CFGR = (ADC{{ id }}->CFGR & ~mask) | polarity | externalTrigger;
+}
+
+template<class DelayPolicy>
+void
+modm::platform::Adc{{ id }}<DelayPolicy>::disableRegularConversionExternalTrigger()
+{
+	// EXTEN = 00: hardware trigger detection disabled (software start).
+	ADC{{ id }}->CFGR &= ~(ADC_CFGR_EXTEN_Msk | ADC_CFGR_EXTSEL_Msk);
+}
+
+template<class DelayPolicy>
+void
+modm::platform::Adc{{ id }}<DelayPolicy>::startInjectedConversionSequence()
+{
+	acknowledgeInterruptFlags(InterruptFlag::EndOfInjectedConversion |
+			InterruptFlag::EndOfInjectedSequenceOfConversions);
+	ADC{{ id }}->CR |= ADC_CR_JADSTART;
+}
+
+template<class DelayPolicy>
+bool
+modm::platform::Adc{{ id }}<DelayPolicy>::setInjectedConversionChannel(
+	uint8_t index, Channel channel, SampleTime sampleTime)
+{
+	if (index >= 4) {
+		return false;
+	}
+	if (!configureChannel(channel, sampleTime)) {
+		return false;
+	}
+
+	// H5 JSQR: JSQ1@9, then +6 bits per rank (same layout as F3/G4/H7).
+	static_assert(ADC_JSQR_JSQ2_Pos == ADC_JSQR_JSQ1_Pos + 6);
+	static_assert(ADC_JSQR_JSQ3_Pos == ADC_JSQR_JSQ2_Pos + 6);
+	static_assert(ADC_JSQR_JSQ4_Pos == ADC_JSQR_JSQ3_Pos + 6);
+
+	const uint32_t pos = ADC_JSQR_JSQ1_Pos + 6 * index;
+	const uint32_t mask = ADC_JSQR_JSQ1_Msk << (6 * index);
+	ADC{{ id }}->JSQR = (ADC{{ id }}->JSQR & ~mask) |
+	                    (static_cast<uint32_t>(channel) << pos);
+	return true;
+}
+
+template<class DelayPolicy>
+bool
+modm::platform::Adc{{ id }}<DelayPolicy>::setInjectedConversionSequenceLength(
+	uint8_t length)
+{
+	if (length < 1 or length > 4) {
+		return false;
+	}
+	ADC{{ id }}->JSQR = (ADC{{ id }}->JSQR & ~ADC_JSQR_JL) |
+	                    ((static_cast<uint32_t>(length) - 1u) << ADC_JSQR_JL_Pos);
+	return true;
+}
+
+template<class DelayPolicy>
+bool
+modm::platform::Adc{{ id }}<DelayPolicy>::setInjectedConversionSequence(
+	std::span<const SequenceChannel> sequence)
+{
+	if (sequence.size() == 0 or sequence.size() > 4) {
+		return false;
+	}
+
+	if (!setInjectedConversionSequenceLength(static_cast<uint8_t>(sequence.size()))) {
+		return false;
+	}
+
+	for (const auto [i, config] : modm::enumerate(sequence)) {
+		const auto [channel, sampleTime] = config;
+		if (!setInjectedConversionChannel(static_cast<uint8_t>(i), channel, sampleTime)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+template<class DelayPolicy>
+void modm::platform::Adc{{ id }}<DelayPolicy>::enableInjectedConversionExternalTrigger(
+	ExternalTriggerPolarity externalTriggerPolarity,
+	ExternalTriggerEvent externalTriggerEvent) {
+	const auto polarity =
+		(static_cast<uint32_t>(externalTriggerPolarity) << ADC_JSQR_JEXTEN_Pos);
+	const auto externalTrigger =
+		(static_cast<uint32_t>(externalTriggerEvent) << ADC_JSQR_JEXTSEL_Pos);
+	const auto mask = ADC_JSQR_JEXTEN_Msk | ADC_JSQR_JEXTSEL_Msk;
+	ADC{{ id }}->JSQR = (ADC{{ id }}->JSQR & ~mask) | polarity | externalTrigger;
+}
+
+template<class DelayPolicy>
+void modm::platform::Adc{{ id }}<DelayPolicy>::disableInjectedConversionExternalTrigger() {
+	ADC{{ id }}->JSQR &= ~(ADC_JSQR_JEXTEN_Msk | ADC_JSQR_JEXTSEL_Msk);
+}
+
+template<class DelayPolicy>
+bool modm::platform::Adc{{ id }}<DelayPolicy>::isInjectedConversionFinished() {
+	// JEOS: end of the full injected sequence (all JL+1 ranks).
+	return static_cast<bool>(
+		getInterruptFlags() & InterruptFlag::EndOfInjectedSequenceOfConversions);
+}
+
+template<class DelayPolicy>
+bool
+modm::platform::Adc{{ id }}<DelayPolicy>::enableChannelOffset(
+	const OffsetSlot slot, const Channel channel, const int16_t offset,
+	const bool saturate)
+{
+	// RM0481: OFRn writable only when ADSTART = 0 and JADSTART = 0.
+	if (ADC{{ id }}->CR & (ADC_CR_ADSTART | ADC_CR_JADSTART)) {
+		return false;
+	}
+
+	// OFFSET[11:0] stores magnitude; OFFSETPOS selects add vs subtract.
+	const uint32_t magnitude =
+		static_cast<uint32_t>(offset < 0 ? -static_cast<int32_t>(offset)
+		                                 : static_cast<int32_t>(offset));
+	const uint32_t offsetMask =
+		(magnitude << ADC_OFR1_OFFSET1_Pos) & ADC_OFR1_OFFSET1_Msk;
+	const uint32_t signMask = (offset > 0) ? ADC_OFR1_OFFSETPOS : 0u;
+	const uint32_t saturateMask = saturate ? ADC_OFR1_SATEN : 0u;
+	const uint32_t enableMask = ADC_OFR1_OFFSET1_EN;
+	const uint32_t channelMask =
+		(static_cast<uint32_t>(channel) << ADC_OFR1_OFFSET1_CH_Pos) &
+		ADC_OFR1_OFFSET1_CH_Msk;
+	// Bit layout is identical across OFR1…OFR4; OFR1_* masks are fine for all.
+	const uint32_t offsetValue =
+		channelMask | offsetMask | enableMask | saturateMask | signMask;
+
+	switch (slot) {
+		case OffsetSlot::Slot0: ADC{{ id }}->OFR1 = offsetValue; break;
+		case OffsetSlot::Slot1: ADC{{ id }}->OFR2 = offsetValue; break;
+		case OffsetSlot::Slot2: ADC{{ id }}->OFR3 = offsetValue; break;
+		case OffsetSlot::Slot3: ADC{{ id }}->OFR4 = offsetValue; break;
+		default:
+			return false;
+	}
+	return true;
+}
+
+template<class DelayPolicy>
+bool
+modm::platform::Adc{{ id }}<DelayPolicy>::disableChannelOffset(const OffsetSlot slot)
+{
+	if (ADC{{ id }}->CR & (ADC_CR_ADSTART | ADC_CR_JADSTART)) {
+		return false;
+	}
+
+	switch (slot) {
+		case OffsetSlot::Slot0: ADC{{ id }}->OFR1 &= ~ADC_OFR1_OFFSET1_EN; break;
+		case OffsetSlot::Slot1: ADC{{ id }}->OFR2 &= ~ADC_OFR2_OFFSET2_EN; break;
+		case OffsetSlot::Slot2: ADC{{ id }}->OFR3 &= ~ADC_OFR3_OFFSET3_EN; break;
+		case OffsetSlot::Slot3: ADC{{ id }}->OFR4 &= ~ADC_OFR4_OFFSET4_EN; break;
+		default:
+			return false;
+	}
+	return true;
+}
+
+template<class DelayPolicy>
+void modm::platform::Adc{{ id }}<DelayPolicy>::setDmaMode(DmaMode mode)
+{
+	constexpr uint32_t mask = std::to_underlying(DmaMode::Mask);
+	ADC{{ id }}->CFGR =
+		(ADC{{ id }}->CFGR & ~mask) | std::to_underlying(mode);
+}
+
+template<class DelayPolicy>
+void modm::platform::Adc{{ id }}<DelayPolicy>::enableInterruptVector(
+	const uint32_t priority, const bool enable)
+{
+	// H5: ADC1 and ADC2 each have their own NVIC line (unlike F3 ADC1_2).
+	const IRQn_Type INTERRUPT_VECTOR = ADC{{ id }}_IRQn;
+
+	if (enable) {
+		NVIC_SetPriority(INTERRUPT_VECTOR, priority);
+		NVIC_EnableIRQ(INTERRUPT_VECTOR);
+	} else {
+		NVIC_DisableIRQ(INTERRUPT_VECTOR);
+	}
+}
+
+template<class DelayPolicy>
+void
+modm::platform::Adc{{ id }}<DelayPolicy>::enableInterrupt(const Interrupt_t interrupt)
+{
+	ADC{{ id }}->IER |= interrupt.value;
+}
+
+template<class DelayPolicy>
+void
+modm::platform::Adc{{ id }}<DelayPolicy>::disableInterrupt(const Interrupt_t interrupt)
+{
+	ADC{{ id }}->IER &= ~interrupt.value;
+}
+

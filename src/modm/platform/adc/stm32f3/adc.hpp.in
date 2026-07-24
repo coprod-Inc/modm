@@ -333,6 +333,7 @@ public:
 	};
 	MODM_FLAGS32(Interrupt);
 
+	// Raised whether or not Interrupt + NVIC is enabled or not. 
 	enum class InterruptFlag : uint32_t
 	{
 		Ready 								= ADC_ISR_ADRDY,
