@@ -492,7 +492,10 @@ public:
 	static inline void startConversion();
 
 	/**
-	 * Stop regular and injected conversions (ADSTP + JADSTP), wait until done.
+	 * Stop active regular and/or injected conversions (ADSTP / JADSTP).
+	 *
+	 * Only asserts STP for groups that have *START set — asserting STP on an
+	 * idle group can leave the bit stuck on STM32H5.
 	 */
 	static inline void stopConversion();
 

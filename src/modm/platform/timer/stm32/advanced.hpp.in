@@ -107,6 +107,26 @@ public:
 		TIM{{ id }}->CR1 |= TIM_CR1_CEN;
 	}
 
+	/**
+	 * Suppress Update event generation (CR1.UDIS=1).
+	 *
+	 * While set, overflow/underflow does not generate UEV, so ARR/CCR/PSC
+	 * preload buffers can be written as a group and loaded on the next UEV
+	 * after @ref enableUpdateEvent().
+	 */
+	static inline void
+	disableUpdateEvent()
+	{
+		TIM{{ id }}->CR1 |= TIM_CR1_UDIS;
+	}
+
+	/// Clear CR1.UDIS — next overflow/underflow generates UEV again.
+	static inline void
+	enableUpdateEvent()
+	{
+		TIM{{ id }}->CR1 &= ~TIM_CR1_UDIS;
+	}
+
 	static void
 	setMode(Mode mode,
 			SlaveMode slaveMode = SlaveMode::Disabled,

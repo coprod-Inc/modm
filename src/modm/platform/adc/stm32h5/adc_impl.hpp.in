@@ -256,8 +256,16 @@ template<class DelayPolicy>
 void
 modm::platform::Adc{{ id }}<DelayPolicy>::stopConversion()
 {
-	ADC{{ id }}->CR |= ADC_CR_ADSTP | ADC_CR_JADSTP;
-	while ((ADC{{ id }}->CR & (ADC_CR_ADSTP | ADC_CR_JADSTP)) != 0) {
+	// Only assert *STP for an active group — on H5, STP for an idle group can stick.
+	if ((ADC{{ id }}->CR & ADC_CR_ADSTART) != 0) {
+		ADC{{ id }}->CR |= ADC_CR_ADSTP;
+		while ((ADC{{ id }}->CR & ADC_CR_ADSTP) != 0) {
+		}
+	}
+	if ((ADC{{ id }}->CR & ADC_CR_JADSTART) != 0) {
+		ADC{{ id }}->CR |= ADC_CR_JADSTP;
+		while ((ADC{{ id }}->CR & ADC_CR_JADSTP) != 0) {
+		}
 	}
 
 	acknowledgeInterruptFlags(InterruptFlag::EndOfRegularConversion |
