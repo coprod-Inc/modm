@@ -319,12 +319,12 @@ modm::platform::Adc{{ id }}<DelayPolicy>::startInjectedConversionSequence()
 template<class DelayPolicy>
 bool
 modm::platform::Adc{{ id }}<DelayPolicy>::setInjectedConversionChannel(
-	uint8_t index, Channel channel, SampleTime sampleTime)
+	uint8_t index, Channel channel)
 {
 	if (index >= 4) {
 		return false;
 	}
-	if (!configureChannel(channel, sampleTime)) {
+	if (static_cast<uint8_t>(channel) > 19) {
 		return false;
 	}
 
@@ -338,6 +338,17 @@ modm::platform::Adc{{ id }}<DelayPolicy>::setInjectedConversionChannel(
 	ADC{{ id }}->JSQR = (ADC{{ id }}->JSQR & ~mask) |
 	                    (static_cast<uint32_t>(channel) << pos);
 	return true;
+}
+
+template<class DelayPolicy>
+bool
+modm::platform::Adc{{ id }}<DelayPolicy>::setInjectedConversionChannel(
+	uint8_t index, Channel channel, SampleTime sampleTime)
+{
+	if (!configureChannel(channel, sampleTime)) {
+		return false;
+	}
+	return setInjectedConversionChannel(index, channel);
 }
 
 template<class DelayPolicy>
@@ -378,13 +389,24 @@ modm::platform::Adc{{ id }}<DelayPolicy>::setInjectedConversionSequence(
 template<class DelayPolicy>
 void modm::platform::Adc{{ id }}<DelayPolicy>::enableInjectedConversionExternalTrigger(
 	ExternalTriggerPolarity externalTriggerPolarity,
-	ExternalTriggerEvent externalTriggerEvent) {
+	InjectedExternalTriggerEvent externalTriggerEvent) {
+	// Enums hold unshifted JEXTEN[1:0] / JEXTSEL[4:0]; place into JSQR.
 	const auto polarity =
 		(static_cast<uint32_t>(externalTriggerPolarity) << ADC_JSQR_JEXTEN_Pos);
 	const auto externalTrigger =
 		(static_cast<uint32_t>(externalTriggerEvent) << ADC_JSQR_JEXTSEL_Pos);
 	const auto mask = ADC_JSQR_JEXTEN_Msk | ADC_JSQR_JEXTSEL_Msk;
 	ADC{{ id }}->JSQR = (ADC{{ id }}->JSQR & ~mask) | polarity | externalTrigger;
+}
+
+template<class DelayPolicy>
+modm_always_inline void
+modm::platform::Adc{{ id }}<DelayPolicy>::setInjectedConversionExternalTriggerPolarity(
+	ExternalTriggerPolarity externalTriggerPolarity) {
+	// JEXTEN only — leave JEXTSEL / JL / JSQx untouched.
+	const auto polarity =
+		(static_cast<uint32_t>(externalTriggerPolarity) << ADC_JSQR_JEXTEN_Pos);
+	ADC{{ id }}->JSQR = (ADC{{ id }}->JSQR & ~ADC_JSQR_JEXTEN_Msk) | polarity;
 }
 
 template<class DelayPolicy>

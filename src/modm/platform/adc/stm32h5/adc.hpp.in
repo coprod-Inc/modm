@@ -322,6 +322,43 @@ public:
 	};
 
 	/**
+	 * Injected-group hardware trigger source (ADC_JSQR JEXTSEL[4:0]).
+	 *
+	 * Values are the unshifted JEXTSEL encoding; shift by ADC_JSQR_JEXTSEL_Pos
+	 * when writing ADC_JSQR. Mapping from RM0481 / STM32H5 ADC injected trigger
+	 * table (same numeric codes as LL_ADC_INJ_TRIG_EXT_*).
+	 *
+	 * @warning JEXTSEL encodings are not the same as regular EXTSEL
+	 *          (@ref ExternalTriggerEvent). Example: TIM1_TRGO is 0x09 for
+	 *          regular and 0x00 for injected.
+	 *
+	 * TRGO  = Timer TRiGger Output (master-mode event to other peripherals).
+	 * TRGO2 = second trigger output on advanced timers (e.g. TIM1 / TIM8).
+	 * CCx   = timer capture/compare channel x match event.
+	 */
+	enum class InjectedExternalTriggerEvent : uint32_t
+	{
+		Tim1Trgo   = 0x00u,  ///< TIM1 trigger output (TRGO)
+		Tim1Cc4    = 0x01u,  ///< TIM1 capture/compare 4
+		Tim2Trgo   = 0x02u,  ///< TIM2 trigger output (TRGO)
+		Tim2Cc1    = 0x03u,  ///< TIM2 capture/compare 1
+		Tim3Cc4    = 0x04u,  ///< TIM3 capture/compare 4
+		Tim4Trgo   = 0x05u,  ///< TIM4 trigger output (TRGO); H563/H573
+		Exti15     = 0x06u,  ///< EXTI line 15
+		Tim8Cc4    = 0x07u,  ///< TIM8 capture/compare 4; H563/H573
+		Tim1Trgo2  = 0x08u,  ///< TIM1 trigger output 2 (TRGO2)
+		Tim8Trgo   = 0x09u,  ///< TIM8 trigger output (TRGO); H563/H573
+		Tim8Trgo2  = 0x0Au,  ///< TIM8 trigger output 2 (TRGO2); H563/H573
+		Tim3Cc3    = 0x0Bu,  ///< TIM3 capture/compare 3
+		Tim3Trgo   = 0x0Cu,  ///< TIM3 trigger output (TRGO)
+		Tim3Cc1    = 0x0Du,  ///< TIM3 capture/compare 1
+		Tim6Trgo   = 0x0Eu,  ///< TIM6 trigger output (TRGO)
+		Tim15Trgo  = 0x0Fu,  ///< TIM15 trigger output (TRGO); H563/H573
+		Lptim1Ch1  = 0x12u,  ///< LPTIM1 channel 1
+		Lptim2Ch1  = 0x13u,  ///< LPTIM2 channel 1
+	};
+
+	/**
 	 * Programmable channel offset unit (ADC_OFR1…OFR4).
 	 *
 	 * Each slot can hold an offset value + channel select for hardware
@@ -536,7 +573,61 @@ public:
 	static inline void startInjectedConversionSequence();
 
 	/**
-	 * Set one injected sequencer rank (JSQ1…JSQ4) and its sample time.
+	 * Set only the injected sequencer rank channel (JSQ1…JSQ4).
+	 *
+	 * Writes JSQx only — does not touch SMPRx. Sample time for @p channel must
+	 * already be programmed (e.g. via @ref configureChannel) if a non-default
+	 * time is required.
+	 *
+	 * @param index  Rank index 0..3
+	 * @return false if index or channel is invalid
+	 */
+	static inline bool setInjectedConversionChannel(uint8_t index, Channel channel);
+
+	/// setInjectedConversionChannel(index, getPinChannel<Gpio>()) — JSQx only
+	template<class Gpio>
+	static inline bool setInjectedConversionChannel(uint8_t index)
+	{
+		return setInjectedConversionChannel(index, getPinChannel<Gpio>());
+	}
+
+	/// Program injected rank 0 (JSQ1). Prefer over @ref setInjectedConversionChannel in FOC paths.
+	modm_always_inline static void
+	setInjectedConversionChannelIndexA(Channel channel)
+	{
+		ADC{{ id }}->JSQR = (ADC{{ id }}->JSQR & ~ADC_JSQR_JSQ1_Msk) |
+		                    (static_cast<uint32_t>(channel) << ADC_JSQR_JSQ1_Pos);
+	}
+
+	/// Program injected rank 1 (JSQ2).
+	modm_always_inline static void
+	setInjectedConversionChannelIndexB(Channel channel)
+	{
+		ADC{{ id }}->JSQR = (ADC{{ id }}->JSQR & ~ADC_JSQR_JSQ2_Msk) |
+		                    (static_cast<uint32_t>(channel) << ADC_JSQR_JSQ2_Pos);
+	}
+
+	/// Program injected rank 2 (JSQ3).
+	modm_always_inline static void
+	setInjectedConversionChannelIndexC(Channel channel)
+	{
+		ADC{{ id }}->JSQR = (ADC{{ id }}->JSQR & ~ADC_JSQR_JSQ3_Msk) |
+		                    (static_cast<uint32_t>(channel) << ADC_JSQR_JSQ3_Pos);
+	}
+
+	/// Program injected rank 3 (JSQ4).
+	modm_always_inline static void
+	setInjectedConversionChannelIndexD(Channel channel)
+	{
+		ADC{{ id }}->JSQR = (ADC{{ id }}->JSQR & ~ADC_JSQR_JSQ4_Msk) |
+		                    (static_cast<uint32_t>(channel) << ADC_JSQR_JSQ4_Pos);
+	}
+
+	/**
+	 * Set one injected sequencer rank (JSQ1…JSQ4) and its sample time (SMPRx).
+	 *
+	 * Equivalent to @ref configureChannel followed by the channel-only
+	 * @ref setInjectedConversionChannel overload.
 	 *
 	 * @param index  Rank index 0..3
 	 * @return false if index or channel is invalid
@@ -582,13 +673,21 @@ public:
 	 *
 	 * Enum values are unshifted; shifted into JSQR here. Still call
 	 * startInjectedConversionSequence() afterward to set JADSTART and arm
-	 * waiting for the edge. @note ExternalTriggerEvent encodings were listed
-	 * for regular EXTSEL; confirm the injected JEXTSEL table in RM0481 for
-	 * the same numeric code.
+	 * waiting for the edge. Use @ref InjectedExternalTriggerEvent (not
+	 * regular @ref ExternalTriggerEvent) — JEXTSEL ≠ EXTSEL on H5.
 	 */
 	static inline void enableInjectedConversionExternalTrigger(
 			ExternalTriggerPolarity externalTriggerPolarity,
-			ExternalTriggerEvent externalTriggerEvent);
+			InjectedExternalTriggerEvent externalTriggerEvent);
+
+	/**
+	 * Change only JSQR.JEXTEN (rising / falling / both / none).
+	 *
+	 * Does not touch JEXTSEL, JL, or JSQx. Prefer after
+	 * @ref enableInjectedConversionExternalTrigger has programmed the source.
+	 */
+	modm_always_inline static void setInjectedConversionExternalTriggerPolarity(
+			ExternalTriggerPolarity externalTriggerPolarity);
 
 	/// Clear JEXTEN and JEXTSEL → software JADSTART only.
 	static inline void disableInjectedConversionExternalTrigger();
@@ -627,6 +726,34 @@ public:
 		default:
 			return ADC{{ id }}->JDR4;
 		}
+	}
+
+	/// Read injected rank 0 (JDR1). Prefer over @ref getInjectedConversionValue in FOC paths.
+	modm_always_inline static auto
+	getInjectedConversionValueIndexA()
+	{
+		return ADC{{ id }}->JDR1;
+	}
+
+	/// Read injected rank 1 (JDR2).
+	modm_always_inline static auto
+	getInjectedConversionValueIndexB()
+	{
+		return ADC{{ id }}->JDR2;
+	}
+
+	/// Read injected rank 2 (JDR3).
+	modm_always_inline static auto
+	getInjectedConversionValueIndexC()
+	{
+		return ADC{{ id }}->JDR3;
+	}
+
+	/// Read injected rank 3 (JDR4).
+	modm_always_inline static auto
+	getInjectedConversionValueIndexD()
+	{
+		return ADC{{ id }}->JDR4;
 	}
 
 	/**
@@ -704,6 +831,16 @@ public:
 
 	// Clears the specified interrupt flags in ADC_ISR.
 	static inline void acknowledgeInterruptFlags(const InterruptFlag_t flags);
+
+	/**
+	 * Clear JEOS and JEOC (write-1-to-clear). Prefer in FOC / JEOS ISR paths over
+	 * @ref acknowledgeInterruptFlags to avoid Flags32 composition.
+	 */
+	modm_always_inline static void
+	acknowledgeInjectedEndOfSequence()
+	{
+		ADC{{ id }}->ISR = ADC_ISR_JEOS | ADC_ISR_JEOC;
+	}
 };
 
 }  // namespace platform
