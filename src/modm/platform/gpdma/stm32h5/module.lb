@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+#
+# Copyright (c) 2026, coprod LLC
+#
+# This file is part of the modm project.
+#
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# -----------------------------------------------------------------------------
+
+def _gpdma_instances(device):
+    instances = set()
+    for vector in device.get_driver("core")["vector"]:
+        name = vector.get("name", "")
+        if name.startswith("GPDMA") and "_Channel" in name:
+            instances.add(int(name[5]))
+    return sorted(instances)
+
+
+def init(module):
+    module.name = ":platform:gpdma"
+    module.description = "General Purpose Direct Memory Access (GPDMA)"
+
+
+def prepare(module, options):
+    device = options[":target"]
+    if device.identifier.family != "h5":
+        return False
+    if not device.has_driver("gpdma"):
+        return False
+    # H5x4/H5x5 use a 12-channel GPDMA (type *v2*); RM0481 8-channel table only.
+    if "v2" in device.get_driver("gpdma").get("type", ""):
+        return False
+
+    module.depends(
+        ":cmsis:device",
+        ":platform:rcc",
+        ":architecture:interrupt",
+        ":architecture:register",
+        ":architecture:assert")
+    return True
+
+
+def build(env):
+    device = env[":target"]
+    substitutions = {
+        "instances": _gpdma_instances(device),
+        "channel_count": 8,
+    }
+
+    env.substitutions = substitutions
+    env.outbasepath = "modm/src/modm/platform/gpdma"
+
+    env.copy("gpdma_base.hpp")
+    env.copy("gpdma_hal.hpp")
+    env.template("gpdma.hpp.in", "gpdma.hpp")
+    env.template("gpdma.cpp.in", "gpdma.cpp")
