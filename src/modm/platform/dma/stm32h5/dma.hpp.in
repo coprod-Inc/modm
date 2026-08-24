@@ -1,0 +1,316 @@
+/*
+ * Copyright (c) 2026, coprod LLC
+ *
+ * This file is part of the modm project.
+ *
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ */
+// ----------------------------------------------------------------------------
+
+#ifndef MODM_STM32H5_DMA_HPP
+#define MODM_STM32H5_DMA_HPP
+
+#include <modm/platform/gpdma/gpdma.hpp>
+
+#include "dma_base.hpp"
+
+namespace modm::platform
+{
+
+/**
+ * Classic DMA controller façade over GPDMA.
+ *
+ * Circular mode is a one-node linked list with @ref ChainLoop::Loop.
+ *
+ * @tparam ID GPDMA instance (1 or 2)
+ *
+ * @ingroup	modm_platform_dma
+ */
+template<uint32_t ID>
+class DmaController : public DmaBase
+{
+	static_assert(ID == 1 or ID == 2, "invalid DMA instance");
+
+	using Gpdma = GpdmaController<ID>;
+
+public:
+	static void
+	enable()
+	{
+		Gpdma::enable();
+	}
+
+	static void
+	disable()
+	{
+		Gpdma::disable();
+	}
+
+	template<Channel C>
+	class Channel
+	{
+		using GpdmaCh = typename Gpdma::template Channel<C>;
+
+	public:
+		template<Peripheral peripheral, Signal signal = Signal::NoSignal>
+		struct RequestMapping
+		{
+			using Channel = DmaController<ID>::Channel<C>;
+			static constexpr Request Request = mappedRequest<peripheral, signal>();
+		};
+
+		static void
+		configure(DataTransferDirection direction,
+				MemoryDataSize memoryDataSize,
+				PeripheralDataSize peripheralDataSize,
+				MemoryIncrementMode memoryIncrement,
+				PeripheralIncrementMode peripheralIncrement,
+				Priority priority = Priority::Medium,
+				CircularMode circularMode = CircularMode::Disabled)
+		{
+			direction_ = direction;
+			memoryDataSize_ = memoryDataSize;
+			peripheralDataSize_ = peripheralDataSize;
+			memoryIncrement_ = memoryIncrement;
+			peripheralIncrement_ = peripheralIncrement;
+			priority_ = priority;
+			circularMode_ = circularMode;
+
+			GpdmaCh::configure(toTransfer(direction),
+					sourceWidth(),
+					destinationWidth(),
+					sourceIncrement(),
+					destinationIncrement(),
+					priority);
+		}
+
+		static void
+		start()
+		{
+			if (circularMode_ == CircularMode::Enabled)
+				armCircularChain();
+			GpdmaCh::start();
+		}
+
+		static void
+		stop()
+		{
+			GpdmaCh::stop();
+		}
+
+		static DataTransferDirection
+		getDataTransferDirection()
+		{
+			return direction_;
+		}
+
+		static void
+		setMemoryAddress(uintptr_t address)
+		{
+			memoryAddress_ = address;
+			applyAddresses();
+		}
+
+		static void
+		setPeripheralAddress(uintptr_t address)
+		{
+			peripheralAddress_ = address;
+			applyAddresses();
+		}
+
+		static void
+		setMemoryIncrementMode(bool increment)
+		{
+			memoryIncrement_ = increment ? Increment::Increment : Increment::Fixed;
+			if (memoryIsSource())
+				GpdmaCh::setSourceIncrement(increment);
+			else
+				GpdmaCh::setDestinationIncrement(increment);
+		}
+
+		static void
+		setPeripheralIncrementMode(bool increment)
+		{
+			peripheralIncrement_ = increment ? Increment::Increment : Increment::Fixed;
+			if (memoryIsSource())
+				GpdmaCh::setDestinationIncrement(increment);
+			else
+				GpdmaCh::setSourceIncrement(increment);
+		}
+
+		/// @p length Number of beats (NDTR), not bytes.
+		static void
+		setDataLength(std::size_t length)
+		{
+			dataLength_ = length;
+			GpdmaCh::setBlockLengthBytes(length * dataWidthBytes(sourceWidth()));
+		}
+
+		template<Request dmaRequest>
+		static void
+		setPeripheralRequest()
+		{
+			request_ = dmaRequest;
+			GpdmaCh::setHardwareRequest(dmaRequest);
+		}
+
+		static void
+		setTransferErrorIrqHandler(IrqHandler irqHandler)
+		{
+			GpdmaCh::setTransferErrorIrqHandler(irqHandler);
+		}
+
+		static void
+		setHalfTransferCompleteIrqHandler(IrqHandler irqHandler)
+		{
+			GpdmaCh::setHalfTransferCompleteIrqHandler(irqHandler);
+		}
+
+		static void
+		setTransferCompleteIrqHandler(IrqHandler irqHandler)
+		{
+			GpdmaCh::setTransferCompleteIrqHandler(irqHandler);
+		}
+
+		static void
+		enableInterruptVector(uint32_t priority = 1)
+		{
+			GpdmaCh::enableInterruptVector(priority);
+		}
+
+		static void
+		disableInterruptVector()
+		{
+			GpdmaCh::disableInterruptVector();
+		}
+
+		static void
+		enableInterrupt(InterruptEnable_t irq)
+		{
+			GpdmaCh::enableInterrupt(irq);
+		}
+
+		static void
+		disableInterrupt(InterruptEnable_t irq)
+		{
+			GpdmaCh::disableInterrupt(irq);
+		}
+
+		static InterruptFlags_t
+		getInterruptFlags()
+		{
+			return GpdmaCh::getInterruptFlags();
+		}
+
+		static void
+		clearInterruptFlags(InterruptFlags_t flags = InterruptFlags::All)
+		{
+			GpdmaCh::clearInterruptFlags(flags);
+		}
+
+	private:
+		static constexpr bool
+		memoryIsSource()
+		{
+			return direction_ != DataTransferDirection::PeripheralToMemory;
+		}
+
+		static DataWidth
+		sourceWidth()
+		{
+			return memoryIsSource() ? memoryDataSize_ : peripheralDataSize_;
+		}
+
+		static DataWidth
+		destinationWidth()
+		{
+			return memoryIsSource() ? peripheralDataSize_ : memoryDataSize_;
+		}
+
+		static Increment
+		sourceIncrement()
+		{
+			return memoryIsSource() ? memoryIncrement_ : peripheralIncrement_;
+		}
+
+		static Increment
+		destinationIncrement()
+		{
+			return memoryIsSource() ? peripheralIncrement_ : memoryIncrement_;
+		}
+
+		static void
+		applyAddresses()
+		{
+			if (memoryIsSource())
+			{
+				GpdmaCh::setSourceAddress(memoryAddress_);
+				GpdmaCh::setDestinationAddress(peripheralAddress_);
+			}
+			else
+			{
+				GpdmaCh::setSourceAddress(peripheralAddress_);
+				GpdmaCh::setDestinationAddress(memoryAddress_);
+			}
+		}
+
+		static NodeConfig
+		circularNodeConfig()
+		{
+			const bool memSrc = memoryIsSource();
+			return NodeConfig{
+				.transfer = toTransfer(direction_),
+				.request = request_,
+				.sourceAddress = memSrc ? memoryAddress_ : peripheralAddress_,
+				.destinationAddress = memSrc ? peripheralAddress_ : memoryAddress_,
+				.blockBytes = dataLength_ * dataWidthBytes(sourceWidth()),
+				.sourceWidth = sourceWidth(),
+				.destinationWidth = destinationWidth(),
+				.sourceIncrement = sourceIncrement(),
+				.destinationIncrement = destinationIncrement(),
+			};
+		}
+
+		static void
+		armCircularChain()
+		{
+			circularChain_.reload(circularNodeConfig());
+			GpdmaCh::template configureChain<circularChain_>(priority_, ChainLoop::Loop);
+		}
+
+		static inline DataTransferDirection direction_{DataTransferDirection::PeripheralToMemory};
+		static inline MemoryDataSize memoryDataSize_{MemoryDataSize::Byte};
+		static inline PeripheralDataSize peripheralDataSize_{PeripheralDataSize::Byte};
+		static inline MemoryIncrementMode memoryIncrement_{MemoryIncrementMode::Fixed};
+		static inline PeripheralIncrementMode peripheralIncrement_{PeripheralIncrementMode::Fixed};
+		static inline Priority priority_{Priority::Medium};
+		static inline CircularMode circularMode_{CircularMode::Disabled};
+		static inline Request request_{};
+		static inline uintptr_t memoryAddress_{};
+		static inline uintptr_t peripheralAddress_{};
+		static inline std::size_t dataLength_{};
+		static inline Chain<1> circularChain_{std::array<NodeConfig, 1>{}};
+	};
+};
+
+%% for instance in instances
+/**
+ * DMA{{ instance }} (GPDMA{{ instance }} façade).
+ *
+ * @ingroup	modm_platform_dma
+ */
+class Dma{{ instance }} : public DmaController<{{ instance }}>
+{
+public:
+%% for channel in range(0, channel_count)
+	using Channel{{ channel }} = Channel<DmaBase::Channel::Channel{{ channel }}>;
+%% endfor
+};
+
+%% endfor
+
+}  // namespace modm::platform
+
+#endif  // MODM_STM32H5_DMA_HPP

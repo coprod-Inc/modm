@@ -1,0 +1,247 @@
+/*
+ * Copyright (c) 2026, coprod LLC
+ *
+ * This file is part of the modm project.
+ *
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ */
+// ----------------------------------------------------------------------------
+
+#ifndef MODM_STM32H5_GPDMA_HPP
+#define MODM_STM32H5_GPDMA_HPP
+
+#include <cstdint>
+
+#include "../device.hpp"
+#include <modm/architecture/utils.hpp>
+#include <modm/platform/clock/rcc.hpp>
+
+#include "gpdma_hal.hpp"
+
+namespace modm::platform
+{
+
+/**
+ * GPDMA controller (direct programming + optional linked list).
+ *
+ * A channel copies from @c CSAR to @c CDAR. Pacing is @ref Transfer
+ * (`SWREQ` / `DREQ`), not a DIR bit. Block size is @c CBR1.BNDT in source bytes.
+ *
+ * After a block, @c CLLR = 0 stops the channel. A static @ref Chain passed to
+ * @c configureChain<chain>() holds unlinked nodes (`cllr` = 0). @c start()
+ * writes the next-node pointers; @c stop() clears them. @ref ChainLoop::Loop
+ * points the last node at the first so the chain repeats.
+ *
+ * @tparam ID GPDMA instance (1 or 2)
+ *
+ * @ingroup	modm_platform_gpdma
+ */
+template<uint32_t ID>
+class GpdmaController : public GpdmaBase
+{
+	static_assert(ID == 1 or ID == 2, "invalid GPDMA instance");
+
+	static constexpr uintptr_t
+	controllerChannel0Base()
+	{
+		if constexpr (ID == 1)
+			return GPDMA1_Channel0_BASE;
+		else
+			return GPDMA2_Channel0_BASE;
+	}
+
+	static constexpr IRQn_Type
+	channelIrqn(Channel channel)
+	{
+		if constexpr (ID == 1)
+			return IRQn_Type(GPDMA1_Channel0_IRQn + int(channel));
+		else
+			return IRQn_Type(GPDMA2_Channel0_IRQn + int(channel));
+	}
+
+public:
+	static void
+	enable()
+	{
+		if constexpr (ID == 1)
+			Rcc::enable<Peripheral::Gpdma1>();
+		else
+			Rcc::enable<Peripheral::Gpdma2>();
+	}
+
+	static void
+	disable()
+	{
+		if constexpr (ID == 1)
+			Rcc::disable<Peripheral::Gpdma1>();
+		else
+			Rcc::disable<Peripheral::Gpdma2>();
+	}
+
+	template<Channel C>
+	class Channel : public GpdmaChannelHal<controllerChannel0Base() + uint32_t(C) * GpdmaBase::ChannelRegisterStride>
+	{
+		static_assert(uint8_t(C) < ChannelCount, "invalid GPDMA channel");
+
+		static constexpr uintptr_t ChannelBase =
+				controllerChannel0Base() + uint32_t(C) * GpdmaBase::ChannelRegisterStride;
+
+		using Hal = GpdmaChannelHal<ChannelBase>;
+
+	public:
+		/**
+		 * Stop the channel and program @c CTR1/@c CTR2. Clears @c CLLR.
+		 *
+		 * @ref ChainLoop is used when a chain is armed: @c start() then points
+		 * the last node at the first if @ref ChainLoop::Loop. Defaults: one
+		 * hardware request per burst, burst length 1.
+		 */
+		static void
+		configure(Transfer transfer,
+				DataWidth sourceWidth,
+				DataWidth destinationWidth,
+				Increment sourceIncrement,
+				Increment destinationIncrement,
+				Priority priority = Priority::Medium,
+				ChainLoop chainLoop = ChainLoop::Stop,
+				HardwareRequestMode hardwareRequestMode = HardwareRequestMode::Burst,
+				BurstLength sourceBurstLength = BurstLength::Beats1,
+				BurstLength destinationBurstLength = BurstLength::Beats1)
+		{
+			chainLoop_ = chainLoop;
+			connectChain_ = nullptr;
+			disconnectChain_ = nullptr;
+			Hal::configure(transfer,
+					sourceWidth,
+					destinationWidth,
+					sourceIncrement,
+					destinationIncrement,
+					priority,
+					hardwareRequestMode,
+					sourceBurstLength,
+					destinationBurstLength);
+		}
+
+		/**
+		 * Stop the channel and load the first node of a static @p chain.
+		 *
+		 * Nodes stay unlinked (`cllr` = 0). @c start() connects them; with
+		 * @ref ChainLoop::Loop the last node points at the first.
+		 *
+		 * @tparam chain A @ref Chain object with static storage duration.
+		 *         Locals are rejected: they cannot be template arguments.
+		 */
+		template<auto& chain>
+		static void
+		configureChain(Priority priority = Priority::Medium,
+				ChainLoop chainLoop = ChainLoop::Stop)
+		{
+			chainLoop_ = chainLoop;
+			Hal::stop();
+			chain.disconnect();
+			connectChain_ = []
+			{
+				chain.connect(chainLoop_);
+				Hal::applyNode(chain.front());
+			};
+			disconnectChain_ = [] { chain.disconnect(); };
+			Hal::applyNode(chain.front());
+			Hal::setPriority(priority);
+		}
+
+		static void
+		start()
+		{
+			Hal::clearInterruptFlags();
+			if (connectChain_)
+				connectChain_();
+			Hal::start();
+		}
+
+		static void
+		stop()
+		{
+			Hal::stop();
+			if (disconnectChain_)
+				disconnectChain_();
+		}
+
+		static void
+		setTransferErrorIrqHandler(IrqHandler irqHandler)
+		{
+			transferError = irqHandler;
+		}
+
+		static void
+		setHalfTransferCompleteIrqHandler(IrqHandler irqHandler)
+		{
+			halfTransferComplete = irqHandler;
+		}
+
+		static void
+		setTransferCompleteIrqHandler(IrqHandler irqHandler)
+		{
+			transferComplete = irqHandler;
+		}
+
+		modm_always_inline static void
+		interruptHandler()
+		{
+			const auto flags = Hal::getInterruptFlags();
+			if (flags & InterruptFlags::Error)
+			{
+				stop();
+				if (transferError)
+					transferError();
+			}
+			if (halfTransferComplete and (flags & InterruptFlags::HalfTransferComplete))
+				halfTransferComplete();
+			if (transferComplete and (flags & InterruptFlags::TransferComplete))
+				transferComplete();
+			Hal::clearInterruptFlags(flags);
+		}
+
+		static void
+		enableInterruptVector(uint32_t priority = 1)
+		{
+			NVIC_SetPriority(channelIrqn(C), priority);
+			NVIC_EnableIRQ(channelIrqn(C));
+		}
+
+		static void
+		disableInterruptVector()
+		{
+			NVIC_DisableIRQ(channelIrqn(C));
+		}
+
+	private:
+		static inline ChainLoop chainLoop_{ChainLoop::Stop};
+		static inline void (*connectChain_)(){nullptr};
+		static inline void (*disconnectChain_)(){nullptr};
+		static inline IrqHandler transferError{nullptr};
+		static inline IrqHandler halfTransferComplete{nullptr};
+		static inline IrqHandler transferComplete{nullptr};
+	};
+};
+
+%% for instance in instances
+/**
+ * GPDMA{{ instance }}.
+ *
+ * @ingroup	modm_platform_gpdma
+ */
+class Gpdma{{ instance }} : public GpdmaController<{{ instance }}>
+{
+public:
+%% for channel in range(0, channel_count)
+	using Channel{{ channel }} = Channel<GpdmaBase::Channel::Channel{{ channel }}>;
+%% endfor
+};
+
+%% endfor
+
+}  // namespace modm::platform
+
+#endif  // MODM_STM32H5_GPDMA_HPP
