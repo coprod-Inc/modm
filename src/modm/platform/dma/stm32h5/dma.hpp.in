@@ -113,6 +113,20 @@ public:
 			applyAddresses();
 		}
 
+		/// Programmed memory address for the active transfer node.
+		static uintptr_t
+		memoryAddress()
+		{
+			return memoryAddress_;
+		}
+
+		/// Live destination pointer (GPDMA @c CDAR): next memory write address.
+		static uintptr_t
+		destinationAddress()
+		{
+			return GpdmaCh::destinationAddress();
+		}
+
 		static void
 		setPeripheralAddress(uintptr_t address)
 		{
