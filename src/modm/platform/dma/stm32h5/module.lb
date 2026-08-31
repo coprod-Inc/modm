@@ -3,6 +3,8 @@
 #
 # Copyright (c) 2026, coprod LLC
 #
+# Author: Adam Mesbahi (adam.mesbahi@coprod.ch)
+#
 # This file is part of the modm project.
 #
 # This Source Code Form is subject to the terms of the Mozilla Public
@@ -21,7 +23,7 @@ def _gpdma_instances(device):
 
 def init(module):
     module.name = ":platform:dma"
-    module.description = "Direct Memory Access (DMA) — GPDMA façade"
+    module.description = "Direct Memory Access (DMA)"
 
 
 def prepare(module, options):
@@ -30,14 +32,14 @@ def prepare(module, options):
         return False
     if not device.has_driver("gpdma"):
         return False
+    # H5x4/H5x5 use a 12-channel GPDMA (type *v2*); RM0481 8-channel table only.
     if "v2" in device.get_driver("gpdma").get("type", ""):
         return False
 
     module.depends(
         ":cmsis:device",
-        ":platform:gpdma",
-        ":architecture:interrupt",
-        ":architecture:assert")
+        ":platform:rcc",
+        ":platform:gpdma")
     return True
 
 

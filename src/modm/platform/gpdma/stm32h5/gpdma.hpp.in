@@ -1,6 +1,8 @@
 /*
  * Copyright (c) 2026, coprod LLC
  *
+ * @author  Adam Mesbahi (adam.mesbahi@coprod.ch)
+ *
  * This file is part of the modm project.
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
