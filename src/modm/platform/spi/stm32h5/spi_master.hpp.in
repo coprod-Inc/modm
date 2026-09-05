@@ -68,8 +68,8 @@ public:
 		constexpr Hal::Prescaler prescaler{result.index << SPI_CFG1_MBR_Pos};
 
 		Hal::initialize(prescaler);
+		// SPE on, idle: CSTART is issued per framed transfer() (TSIZE), not continuously.
 		Hal::enableTransfer();
-		Hal::startMasterTransfer();
 	}
 
 	static void
@@ -78,7 +78,6 @@ public:
 		finishTransfer();
 		Hal::setDataMode(mode);
 		Hal::enableTransfer();
-		Hal::startMasterTransfer();
 	}
 
 	static void
@@ -87,7 +86,6 @@ public:
 		finishTransfer();
 		Hal::setDataOrder(order);
 		Hal::enableTransfer();
-		Hal::startMasterTransfer();
 	}
 
 	static void
@@ -96,7 +94,6 @@ public:
 		finishTransfer();
 		Hal::setDataSize(static_cast<SpiHal{{ id }}::DataSize>(size));
 		Hal::enableTransfer();
-		Hal::startMasterTransfer();
 	}
 
 	[[deprecated("Use transfer() instead!")]] // DEPRECATED: 2026q3

@@ -17,46 +17,92 @@
 
 #include "spi_master_{{id}}.hpp"
 
+#include <algorithm>
+
 namespace modm::platform
 {
+
+namespace {
+
+constexpr auto kClearableFlags =
+	SpiHal{{ id }}::StatusFlag::EndOfTransfer |
+	SpiHal{{ id }}::StatusFlag::TxTransferFilled |
+	SpiHal{{ id }}::StatusFlag::Underrun |
+	SpiHal{{ id }}::StatusFlag::Overrun |
+	SpiHal{{ id }}::StatusFlag::CrcError |
+	SpiHal{{ id }}::StatusFlag::TiFrameError |
+	SpiHal{{ id }}::StatusFlag::ModeFault |
+	SpiHal{{ id }}::StatusFlag::Suspension;
+
+void
+flushRxFifo()
+{
+	while (SpiHal{{ id }}::isRxDataAvailable()) {
+		(void) SpiHal{{ id }}::read();
+	}
+}
+
+}  // namespace
 
 uint8_t
 SpiMaster{{ id }}::transfer(uint8_t data)
 {
-	while (Hal::isTxFifoFull())
-		modm::this_fiber::yield();
-
-	Hal::write(data);
-
-	while (!Hal::isRxDataAvailable())
-		modm::this_fiber::yield();
-
-	return Hal::read();
+	uint8_t rx = 0;
+	transfer(&data, &rx, 1);
+	return rx;
 }
 
 void
 SpiMaster{{ id }}::transfer(
 		const uint8_t* tx, uint8_t* rx, std::size_t length)
 {
-	std::size_t rxIndex = 0;
-	std::size_t txIndex = 0;
-
-	while (rxIndex < length) {
-		while ((txIndex < length) and !Hal::isTxFifoFull() and (txIndex - rxIndex) < Hal::FifoSize) {
-			Hal::write(tx ? tx[txIndex] : 0);
-			++txIndex;
-		}
-		while ((rxIndex < length) and Hal::isRxDataAvailable()) {
-			const uint8_t data = Hal::read();
-			if (rx) {
-				rx[rxIndex] = data;
-			}
-			++rxIndex;
-		}
-		if (rxIndex < length) {
-			modm::this_fiber::yield();
-		}
+	if (length == 0) {
+		return;
 	}
+
+	// SPE must be cleared before programming TSIZE; also flushes FIFOs.
+	if (Hal::isTransferEnabled()) {
+		Hal::disableTransfer();
+	}
+	flushRxFifo();
+	Hal::acknowledgeInterruptFlags(kClearableFlags);
+
+	std::size_t offset = 0;
+	while (offset < length) {
+		const std::size_t chunk = std::min(length - offset, Hal::MaxTransferSize);
+		Hal::setTransferSize(static_cast<uint16_t>(chunk));
+		Hal::enableTransfer();
+		Hal::startMasterTransfer();
+
+		std::size_t rxIndex = 0;
+		std::size_t txIndex = 0;
+		while (rxIndex < chunk) {
+			while ((txIndex < chunk) and !Hal::isTxFifoFull() and
+			       (txIndex - rxIndex) < Hal::FifoSize) {
+				Hal::write(tx ? tx[offset + txIndex] : 0);
+				++txIndex;
+			}
+			while ((rxIndex < chunk) and Hal::isRxDataAvailable()) {
+				const uint8_t data = Hal::read();
+				if (rx) {
+					rx[offset + rxIndex] = data;
+				}
+				++rxIndex;
+			}
+			if (rxIndex < chunk) {
+				modm::this_fiber::yield();
+			}
+		}
+
+		modm::this_fiber::poll([&]{ return Hal::isTransferCompleted(); });
+		Hal::acknowledgeInterruptFlags(kClearableFlags);
+		Hal::disableTransfer();
+		flushRxFifo();
+		offset += chunk;
+	}
+
+	Hal::setTransferSize(0);
+	Hal::enableTransfer();
 }
 
 void
@@ -67,17 +113,8 @@ SpiMaster{{ id }}::finishTransfer()
 		Hal::disableTransfer();
 	}
 
-	// H5: no Reload / TSER status flag (H7-only)
-	Hal::acknowledgeInterruptFlags(
-		Hal::StatusFlag::EndOfTransfer |
-		Hal::StatusFlag::TxTransferFilled |
-		Hal::StatusFlag::Underrun |
-		Hal::StatusFlag::Overrun |
-		Hal::StatusFlag::CrcError |
-		Hal::StatusFlag::TiFrameError |
-		Hal::StatusFlag::ModeFault |
-		Hal::StatusFlag::Suspension
-	);
+	flushRxFifo();
+	Hal::acknowledgeInterruptFlags(kClearableFlags);
 }
 
 } // namespace modm::platform
