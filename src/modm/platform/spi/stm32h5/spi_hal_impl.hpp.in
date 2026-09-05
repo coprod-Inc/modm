@@ -35,18 +35,23 @@ inline void SpiHal{{ id }}::initialize(Prescaler prescaler,
 		StatusFlag::Suspension
 	);
 
-	// initialize with unlimited transfer size
+	// Framed transfers set TSIZE per transaction; keep 0 while idle.
 	setTransferSize(0);
 
 	SPI{{ id }}->CR1 = 0;
 
+	// GPIO chip-select: software NSS (SSM) held high via SSI so the peripheral does not
+	// depend on the unused SPI_NSS AF pin. SSOE still blocks spurious multi-master MODF.
 	SPI{{ id }}->CFG2 = static_cast<uint32_t>(dataMode)
 		| static_cast<uint32_t>(dataOrder)
 		| static_cast<uint32_t>(masterSelection)
-		| SPI_CFG2_SSOE; // disable multi-master support to prevent spurious mode fault
+		| SPI_CFG2_SSOE
+		| SPI_CFG2_SSM;
 
 	SPI{{ id }}->CFG1 = static_cast<uint32_t>(prescaler)
 		| static_cast<uint32_t>(dataSize);
+
+	SPI{{ id }}->CR1 = SPI_CR1_SSI;
 }
 
 
