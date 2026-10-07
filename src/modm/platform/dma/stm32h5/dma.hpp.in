@@ -54,6 +54,18 @@ public:
 		using GpdmaCh = typename Gpdma::template Channel<C>;
 
 	public:
+		// Re-export the controller enums so callers can write Channel::Request the way the
+		// STM32H7 DMA channel (which subclasses the base) allowed.
+		using Request = DmaBase::Request;
+		using Signal = DmaBase::Signal;
+		using DataTransferDirection = DmaBase::DataTransferDirection;
+		using MemoryDataSize = DmaBase::MemoryDataSize;
+		using PeripheralDataSize = DmaBase::PeripheralDataSize;
+		using MemoryIncrementMode = DmaBase::MemoryIncrementMode;
+		using PeripheralIncrementMode = DmaBase::PeripheralIncrementMode;
+		using Priority = DmaBase::Priority;
+		using InterruptEnable = DmaBase::InterruptEnable;
+
 		template<Peripheral peripheral, Signal signal = Signal::NoSignal>
 		struct RequestMapping
 		{
