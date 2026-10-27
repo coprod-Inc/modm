@@ -4,6 +4,8 @@
 #	error 	"Don't include this file directly, use 'adc_{{ id }}.hpp' instead!"
 #endif
 
+#include <modm/platform/clock/rcc.hpp>
+
 template<class DelayPolicy>
 void modm::platform::Adc{{ id }}<DelayPolicy>::initialize(const ClockMode clk,
                                                      const ClockSource clk_src,
@@ -78,6 +80,15 @@ void modm::platform::Adc{{ id }}<DelayPolicy>::disable(const bool blocking){
 template<class DelayPolicy>
 bool modm::platform::Adc{{ id }}<DelayPolicy>::isReady() {
 	return static_cast<bool>(getInterruptFlags() & InterruptFlag::Ready);
+}
+
+template<class DelayPolicy>
+bool modm::platform::Adc{{ id }}<DelayPolicy>::isEnabled() {
+	// Shared ADC1+ADC2 AHB clock (RCC_AHB2ENR.ADCEN). Do not read ADC_CR if gated.
+	if (not Rcc::isEnabled<Peripheral::Adc1>()) {
+		return false;
+	}
+	return static_cast<bool>(ADC{{ id }}->CR & ADC_CR_ADEN);
 }
 
 template<class DelayPolicy>

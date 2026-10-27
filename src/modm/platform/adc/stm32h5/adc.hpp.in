@@ -419,6 +419,8 @@ public:
 
 	/// @return true if ADC_ISR.ADRDY is set
 	static inline bool isReady();
+	/// @return true if the ADC AHB clock is on and ADC_CR.ADEN is set.
+	static inline bool isEnabled();
 
 	static inline void calibrate(const CalibrationMode mode, const bool blocking = true);
 
