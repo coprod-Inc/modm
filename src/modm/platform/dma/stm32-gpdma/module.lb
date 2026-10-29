@@ -3,8 +3,6 @@
 #
 # Copyright (c) 2026, coprod LLC
 #
-# Author: Adam Mesbahi (adam.mesbahi@coprod.ch)
-#
 # This file is part of the modm project.
 #
 # This Source Code Form is subject to the terms of the Mozilla Public
@@ -12,43 +10,37 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 # -----------------------------------------------------------------------------
 
-def _gpdma_instances(device):
-    instances = set()
-    for vector in device.get_driver("core")["vector"]:
-        name = vector.get("name", "")
-        if name.startswith("GPDMA") and "_Channel" in name:
-            instances.add(int(name[5]))
-    return sorted(instances)
-
+import re
 
 def init(module):
     module.name = ":platform:dma"
-    module.description = "Direct Memory Access (DMA)"
+    module.description = FileReader("module.md")
 
 
 def prepare(module, options):
     device = options[":target"]
-    if device.identifier.family != "h5":
+    if device.identifier.family != "h5" or not device.has_driver("gpdma"):
         return False
-    if not device.has_driver("gpdma"):
-        return False
-    # H5x4/H5x5 use a 12-channel GPDMA (type *v2*); RM0481 8-channel table only.
-    if "v2" in device.get_driver("gpdma").get("type", ""):
+    # FIXME: The STM32H5E/F GPDMA has 12 channels and more requests
+    if any("v2" in d["type"] for d in device.get_all_drivers("gpdma")):
         return False
 
     module.depends(
         ":cmsis:device",
-        ":platform:rcc",
-        ":platform:gpdma")
+        ":platform:gpdma",
+        ":platform:rcc")
     return True
 
 
 def build(env):
     device = env[":target"]
+    instances = sorted({int(m.group(1)) for v in device.get_driver("core")["vector"]
+                        if (m := re.fullmatch(r"GPDMA(\d)_Channel\d+", v["name"]))})
+
     env.substitutions = {
-        "instances": _gpdma_instances(device),
+        "instances": instances,
         "channel_count": 8,
     }
     env.outbasepath = "modm/src/modm/platform/dma"
     env.copy("dma_base.hpp")
-    env.template("dma.hpp.in", "dma.hpp")
+    env.template("dma.hpp.in")

@@ -1,8 +1,6 @@
 /*
  * Copyright (c) 2026, coprod LLC
  *
- * @author  Adam Mesbahi (adam.mesbahi@coprod.ch)
- *
  * This file is part of the modm project.
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
@@ -38,7 +36,7 @@ class GpdmaChannelHal : public GpdmaBase
 		return reinterpret_cast<DMA_Channel_TypeDef*>(Base);
 	}
 
-	static constexpr uint32_t kMaxBlockBytes = DMA_CBR1_BNDT_Msk;
+	static constexpr uint32_t MaxBlockBytes = DMA_CBR1_BNDT_Msk;
 
 public:
 	static constexpr uint32_t ChannelStride = ChannelRegisterStride;
@@ -206,7 +204,8 @@ public:
 	static void
 	setBlockLengthBytes(std::size_t bytes)
 	{
-		modm_assert(bytes > 0 and bytes <= kMaxBlockBytes, "gpdma", "bndt");
+		modm_assert(bytes > 0 and bytes <= MaxBlockBytes, "gpdma.bndt",
+				"GPDMA block length must be 1 to 65535 bytes!", bytes);
 		reg()->CBR1 = uint32_t(bytes) & DMA_CBR1_BNDT;
 	}
 

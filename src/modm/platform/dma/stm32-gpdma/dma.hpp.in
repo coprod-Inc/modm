@@ -20,7 +20,7 @@ namespace modm::platform
 {
 
 /**
- * Classic DMA controller façade over GPDMA.
+ * DMA controller with the API of the other STM32 DMA drivers, using the GPDMA.
  *
  * Circular mode is a one-node linked list with @ref ChainLoop::Loop.
  *
@@ -48,31 +48,29 @@ public:
 		Gpdma::disable();
 	}
 
-	template<Channel C>
-	class Channel
+	template<DmaBase::Channel C>
+	class Channel : public DmaBase
 	{
 		using GpdmaCh = typename Gpdma::template Channel<C>;
 
 	public:
-		// Re-export the controller enums so callers can write Channel::Request the way the
-		// STM32H7 DMA channel (which subclasses the base) allowed.
-		using Request = DmaBase::Request;
-		using Signal = DmaBase::Signal;
-		using DataTransferDirection = DmaBase::DataTransferDirection;
-		using MemoryDataSize = DmaBase::MemoryDataSize;
-		using PeripheralDataSize = DmaBase::PeripheralDataSize;
-		using MemoryIncrementMode = DmaBase::MemoryIncrementMode;
-		using PeripheralIncrementMode = DmaBase::PeripheralIncrementMode;
-		using Priority = DmaBase::Priority;
-		using InterruptEnable = DmaBase::InterruptEnable;
-
+		/**
+		 * Peripheral request of a peripheral signal for this channel.
+		 *
+		 * Fails to compile if the GPDMA cannot serve the peripheral signal.
+		 */
 		template<Peripheral peripheral, Signal signal = Signal::NoSignal>
 		struct RequestMapping
 		{
 			using Channel = DmaController<ID>::Channel<C>;
-			static constexpr Request Request = mappedRequest<peripheral, signal>();
+			static constexpr DmaBase::Request Request =
+					gpdma::RequestMapping<peripheral, signal>::Request;
 		};
 
+		/**
+		 * Configure the channel. The memory/peripheral addresses, the data
+		 * length and the peripheral request may be set before or after.
+		 */
 		static void
 		configure(DataTransferDirection direction,
 				MemoryDataSize memoryDataSize,
@@ -96,6 +94,11 @@ public:
 					sourceIncrement(),
 					destinationIncrement(),
 					priority);
+			applyAddresses();
+			if (dataLength_)
+				applyDataLength();
+			if (requestSet_)
+				applyRequest();
 		}
 
 		static void
@@ -166,12 +169,12 @@ public:
 				GpdmaCh::setSourceIncrement(increment);
 		}
 
-		/// @p length Number of beats (NDTR), not bytes.
+		/// @p length Number of transfers (NDTR), not bytes.
 		static void
 		setDataLength(std::size_t length)
 		{
 			dataLength_ = length;
-			GpdmaCh::setBlockLengthBytes(length * dataWidthBytes(sourceWidth()));
+			applyDataLength();
 		}
 
 		template<Request dmaRequest>
@@ -179,7 +182,8 @@ public:
 		setPeripheralRequest()
 		{
 			request_ = dmaRequest;
-			GpdmaCh::setHardwareRequest(dmaRequest);
+			requestSet_ = true;
+			applyRequest();
 		}
 
 		static void
@@ -237,10 +241,10 @@ public:
 		}
 
 	private:
-		static constexpr bool
+		static bool
 		memoryIsSource()
 		{
-			return direction_ != DataTransferDirection::PeripheralToMemory;
+			return direction_ == DataTransferDirection::MemoryToPeripheral;
 		}
 
 		static DataWidth
@@ -282,6 +286,20 @@ public:
 			}
 		}
 
+		static void
+		applyDataLength()
+		{
+			GpdmaCh::setBlockLengthBytes(dataLength_ * dataWidthBytes(sourceWidth()));
+		}
+
+		static void
+		applyRequest()
+		{
+			// A hardware request would clear SWREQ of a memory-to-memory transfer
+			if (direction_ != DataTransferDirection::MemoryToMemory)
+				GpdmaCh::setHardwareRequest(request_);
+		}
+
 		static NodeConfig
 		circularNodeConfig()
 		{
@@ -314,6 +332,7 @@ public:
 		static inline Priority priority_{Priority::Medium};
 		static inline CircularMode circularMode_{CircularMode::Disabled};
 		static inline Request request_{};
+		static inline bool requestSet_{false};
 		static inline uintptr_t memoryAddress_{};
 		static inline uintptr_t peripheralAddress_{};
 		static inline std::size_t dataLength_{};
@@ -323,20 +342,19 @@ public:
 
 %% for instance in instances
 /**
- * DMA{{ instance }} (GPDMA{{ instance }} façade).
+ * DMA{{ instance }} using GPDMA{{ instance }}.
  *
  * @ingroup	modm_platform_dma
  */
 class Dma{{ instance }} : public DmaController<{{ instance }}>
 {
 public:
-%% for channel in range(0, channel_count)
+%% for channel in range(channel_count)
 	using Channel{{ channel }} = Channel<DmaBase::Channel::Channel{{ channel }}>;
 %% endfor
 };
 
 %% endfor
-
 }  // namespace modm::platform
 
 #endif  // MODM_STM32H5_DMA_HPP

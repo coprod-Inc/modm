@@ -1,8 +1,6 @@
 /*
  * Copyright (c) 2026, coprod LLC
  *
- * @author  Adam Mesbahi (adam.mesbahi@coprod.ch)
- *
  * This file is part of the modm project.
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
@@ -237,13 +235,12 @@ public:
 class Gpdma{{ instance }} : public GpdmaController<{{ instance }}>
 {
 public:
-%% for channel in range(0, channel_count)
+%% for channel in range(channel_count)
 	using Channel{{ channel }} = Channel<GpdmaBase::Channel::Channel{{ channel }}>;
 %% endfor
 };
 
 %% endfor
-
 }  // namespace modm::platform
 
 #endif  // MODM_STM32H5_GPDMA_HPP

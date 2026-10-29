@@ -1,8 +1,6 @@
 /*
  * Copyright (c) 2026, coprod LLC
  *
- * @author  Adam Mesbahi (adam.mesbahi@coprod.ch)
- *
  * This file is part of the modm project.
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
@@ -16,7 +14,7 @@
 #include "gpdma.hpp"
 
 %% for instance in instances
-%% for channel in range(0, channel_count)
+%% for channel in range(channel_count)
 MODM_ISR(GPDMA{{ instance }}_Channel{{ channel }})
 {
 	modm::platform::Gpdma{{ instance }}::Channel{{ channel }}::interruptHandler();
