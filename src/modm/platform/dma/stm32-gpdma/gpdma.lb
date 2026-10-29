@@ -1,0 +1,215 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+#
+# Copyright (c) 2026, coprod LLC
+#
+# This file is part of the modm project.
+#
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# -----------------------------------------------------------------------------
+
+import re
+from collections import defaultdict
+
+# GPDMA hardware requests (REQSEL) of STM32H52x/H53x/H56x/H57x and H503
+# (RM0481 and RM0492, same numbering on all devices):
+# (REQSEL, enum name, peripheral, signal)
+requests = [
+    (  0, "Adc1",       "Adc1",     None),
+    (  1, "Adc2",       "Adc2",     None),
+    (  2, "Dac1Ch1",    "Dac1",     "Ch1"),
+    (  3, "Dac1Ch2",    "Dac1",     "Ch2"),
+    (  4, "Tim6Upd",    "Tim6",     "Up"),
+    (  5, "Tim7Upd",    "Tim7",     "Up"),
+    (  6, "Spi1Rx",     "Spi1",     "Rx"),
+    (  7, "Spi1Tx",     "Spi1",     "Tx"),
+    (  8, "Spi2Rx",     "Spi2",     "Rx"),
+    (  9, "Spi2Tx",     "Spi2",     "Tx"),
+    ( 10, "Spi3Rx",     "Spi3",     "Rx"),
+    ( 11, "Spi3Tx",     "Spi3",     "Tx"),
+    ( 12, "I2c1Rx",     "I2c1",     "Rx"),
+    ( 13, "I2c1Tx",     "I2c1",     "Tx"),
+    ( 15, "I2c2Rx",     "I2c2",     "Rx"),
+    ( 16, "I2c2Tx",     "I2c2",     "Tx"),
+    ( 18, "I2c3Rx",     "I2c3",     "Rx"),
+    ( 19, "I2c3Tx",     "I2c3",     "Tx"),
+    ( 21, "Usart1Rx",   "Usart1",   "Rx"),
+    ( 22, "Usart1Tx",   "Usart1",   "Tx"),
+    ( 23, "Usart2Rx",   "Usart2",   "Rx"),
+    ( 24, "Usart2Tx",   "Usart2",   "Tx"),
+    ( 25, "Usart3Rx",   "Usart3",   "Rx"),
+    ( 26, "Usart3Tx",   "Usart3",   "Tx"),
+    ( 27, "Uart4Rx",    "Uart4",    "Rx"),
+    ( 28, "Uart4Tx",    "Uart4",    "Tx"),
+    ( 29, "Uart5Rx",    "Uart5",    "Rx"),
+    ( 30, "Uart5Tx",    "Uart5",    "Tx"),
+    ( 31, "Usart6Rx",   "Usart6",   "Rx"),
+    ( 32, "Usart6Tx",   "Usart6",   "Tx"),
+    ( 33, "Uart7Rx",    "Uart7",    "Rx"),
+    ( 34, "Uart7Tx",    "Uart7",    "Tx"),
+    ( 35, "Uart8Rx",    "Uart8",    "Rx"),
+    ( 36, "Uart8Tx",    "Uart8",    "Tx"),
+    ( 37, "Uart9Rx",    "Uart9",    "Rx"),
+    ( 38, "Uart9Tx",    "Uart9",    "Tx"),
+    ( 39, "Usart10Rx",  "Usart10",  "Rx"),
+    ( 40, "Usart10Tx",  "Usart10",  "Tx"),
+    ( 41, "Usart11Rx",  "Usart11",  "Rx"),
+    ( 42, "Usart11Tx",  "Usart11",  "Tx"),
+    ( 43, "Uart12Rx",   "Uart12",   "Rx"),
+    ( 44, "Uart12Tx",   "Uart12",   "Tx"),
+    ( 45, "Lpuart1Rx",  "Lpuart1",  "Rx"),
+    ( 46, "Lpuart1Tx",  "Lpuart1",  "Tx"),
+    ( 47, "Spi4Rx",     "Spi4",     "Rx"),
+    ( 48, "Spi4Tx",     "Spi4",     "Tx"),
+    ( 49, "Spi5Rx",     "Spi5",     "Rx"),
+    ( 50, "Spi5Tx",     "Spi5",     "Tx"),
+    ( 51, "Spi6Rx",     "Spi6",     "Rx"),
+    ( 52, "Spi6Tx",     "Spi6",     "Tx"),
+    ( 53, "Sai1A",      "Sai1",     "A"),
+    ( 54, "Sai1B",      "Sai1",     "B"),
+    ( 55, "Sai2A",      "Sai2",     "A"),
+    ( 56, "Sai2B",      "Sai2",     "B"),
+    ( 57, "Ospi1",      "Octospi1", None),
+    ( 58, "Tim1Cc1",    "Tim1",     "Ch1"),
+    ( 59, "Tim1Cc2",    "Tim1",     "Ch2"),
+    ( 60, "Tim1Cc3",    "Tim1",     "Ch3"),
+    ( 61, "Tim1Cc4",    "Tim1",     "Ch4"),
+    ( 62, "Tim1Upd",    "Tim1",     "Up"),
+    ( 63, "Tim1Trg",    "Tim1",     "Trig"),
+    ( 64, "Tim1Com",    "Tim1",     "Com"),
+    ( 65, "Tim8Cc1",    "Tim8",     "Ch1"),
+    ( 66, "Tim8Cc2",    "Tim8",     "Ch2"),
+    ( 67, "Tim8Cc3",    "Tim8",     "Ch3"),
+    ( 68, "Tim8Cc4",    "Tim8",     "Ch4"),
+    ( 69, "Tim8Upd",    "Tim8",     "Up"),
+    ( 70, "Tim8Trg",    "Tim8",     "Trig"),
+    ( 71, "Tim8Com",    "Tim8",     "Com"),
+    ( 72, "Tim2Cc1",    "Tim2",     "Ch1"),
+    ( 73, "Tim2Cc2",    "Tim2",     "Ch2"),
+    ( 74, "Tim2Cc3",    "Tim2",     "Ch3"),
+    ( 75, "Tim2Cc4",    "Tim2",     "Ch4"),
+    ( 76, "Tim2Upd",    "Tim2",     "Up"),
+    ( 77, "Tim3Cc1",    "Tim3",     "Ch1"),
+    ( 78, "Tim3Cc2",    "Tim3",     "Ch2"),
+    ( 79, "Tim3Cc3",    "Tim3",     "Ch3"),
+    ( 80, "Tim3Cc4",    "Tim3",     "Ch4"),
+    ( 81, "Tim3Upd",    "Tim3",     "Up"),
+    ( 82, "Tim3Trg",    "Tim3",     "Trig"),
+    ( 83, "Tim4Cc1",    "Tim4",     "Ch1"),
+    ( 84, "Tim4Cc2",    "Tim4",     "Ch2"),
+    ( 85, "Tim4Cc3",    "Tim4",     "Ch3"),
+    ( 86, "Tim4Cc4",    "Tim4",     "Ch4"),
+    ( 87, "Tim4Upd",    "Tim4",     "Up"),
+    ( 88, "Tim5Cc1",    "Tim5",     "Ch1"),
+    ( 89, "Tim5Cc2",    "Tim5",     "Ch2"),
+    ( 90, "Tim5Cc3",    "Tim5",     "Ch3"),
+    ( 91, "Tim5Cc4",    "Tim5",     "Ch4"),
+    ( 92, "Tim5Upd",    "Tim5",     "Up"),
+    ( 93, "Tim5Trg",    "Tim5",     "Trig"),
+    ( 94, "Tim15Cc1",   "Tim15",    "Ch1"),
+    ( 95, "Tim15Upd",   "Tim15",    "Up"),
+    ( 96, "Tim15Trg",   "Tim15",    "Trig"),
+    ( 97, "Tim15Com",   "Tim15",    "Com"),
+    ( 98, "Tim16Cc1",   "Tim16",    "Ch1"),
+    ( 99, "Tim16Upd",   "Tim16",    "Up"),
+    (100, "Tim17Cc1",   "Tim17",    "Ch1"),
+    (101, "Tim17Upd",   "Tim17",    "Up"),
+    (102, "Lptim1Ic1",  "Lptim1",   "Ic1"),
+    (103, "Lptim1Ic2",  "Lptim1",   "Ic2"),
+    (104, "Lptim1Ue",   "Lptim1",   "Ue"),
+    (105, "Lptim2Ic1",  "Lptim2",   "Ic1"),
+    (106, "Lptim2Ic2",  "Lptim2",   "Ic2"),
+    (107, "Lptim2Ue",   "Lptim2",   "Ue"),
+    (108, "Dcmi",       "Dcmi",     None),
+    (108, "Pssi",       "Pssi",     None),
+    (109, "AesOut",     "Aes",      "Out"),
+    (110, "AesIn",      "Aes",      "In"),
+    (111, "HashIn",     "Hash",     "In"),
+    (112, "Ucpd1Rx",    "Ucpd1",    "Rx"),
+    (113, "Ucpd1Tx",    "Ucpd1",    "Tx"),
+    (114, "CordicRead", "Cordic",   "Rd"),
+    (115, "CordicWrite","Cordic",   "Wr"),
+    (116, "FmacRead",   "Fmac",     "Rd"),
+    (117, "FmacWrite",  "Fmac",     "Wr"),
+    (118, "SaesOut",    "Saes",     "Out"),
+    (119, "SaesIn",     "Saes",     "In"),
+    (120, "I3c1Rx",     "I3c1",     "Rx"),
+    (121, "I3c1Tx",     "I3c1",     "Tx"),
+    (122, "I3c1Tc",     "I3c1",     "Tc"),
+    (123, "I3c1Rs",     "I3c1",     "Rs"),
+    (124, "I2c4Rx",     "I2c4",     "Rx"),
+    (125, "I2c4Tx",     "I2c4",     "Tx"),
+    (127, "Lptim3Ic1",  "Lptim3",   "Ic1"),
+    (128, "Lptim3Ic2",  "Lptim3",   "Ic2"),
+    (129, "Lptim3Ue",   "Lptim3",   "Ue"),
+    (130, "Lptim5Ic1",  "Lptim5",   "Ic1"),
+    (131, "Lptim5Ic2",  "Lptim5",   "Ic2"),
+    (132, "Lptim5Ue",   "Lptim5",   "Ue"),
+    (133, "Lptim6Ic1",  "Lptim6",   "Ic1"),
+    (134, "Lptim6Ic2",  "Lptim6",   "Ic2"),
+    (135, "Lptim6Ue",   "Lptim6",   "Ue"),
+    (136, "I3c2Rx",     "I3c2",     "Rx"),
+    (137, "I3c2Tx",     "I3c2",     "Tx"),
+    (138, "I3c2Tc",     "I3c2",     "Tc"),
+    (139, "I3c2Rs",     "I3c2",     "Rs"),
+    (142, "Adc3",       "Adc3",     None),
+]
+
+
+def gpdma_channels(device):
+    """:returns: a dictionary `map[instance] = number of channels`"""
+    channels = defaultdict(int)
+    for vector in device.get_driver("core")["vector"]:
+        match = re.fullmatch(r"GPDMA(\d)_Channel\d+", vector["name"])
+        if match:
+            channels[int(match.group(1))] += 1
+    return dict(sorted(channels.items()))
+
+
+def is_supported(device):
+    if device.identifier.family != "h5" or not device.has_driver("gpdma"):
+        return False
+    # FIXME: The STM32H5E/F GPDMA has 12 channels and more requests
+    return all("v2" not in d["type"] for d in device.get_all_drivers("gpdma"))
+
+
+def init(module):
+    module.name = ":platform:gpdma"
+    module.description = FileReader("gpdma.md")
+
+
+def prepare(module, options):
+    if not is_supported(options[":target"]):
+        return False
+
+    module.depends(
+        ":architecture:assert",
+        ":architecture:interrupt",
+        ":architecture:register",
+        ":cmsis:device",
+        ":platform:rcc")
+    return True
+
+
+def build(env):
+    device = env[":target"]
+    peripherals = env.query(":cmsis:device:peripherals")
+    available = [r for r in requests if r[2] in peripherals]
+    signals = sorted({r[3] for r in available if r[3] is not None})
+
+    channels = gpdma_channels(device)
+    assert set(channels.values()) == {8}
+
+    env.substitutions = {
+        "instances": list(channels),
+        "channel_count": 8,
+        "requests": available,
+        "signals": signals,
+    }
+    env.outbasepath = "modm/src/modm/platform/gpdma"
+    env.template("gpdma_base.hpp.in")
+    env.copy("gpdma_hal.hpp")
+    env.template("gpdma.hpp.in")
+    env.template("gpdma.cpp.in")
