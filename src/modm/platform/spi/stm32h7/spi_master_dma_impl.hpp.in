@@ -162,7 +162,9 @@ SpiMaster{{ id }}_Dma<DmaChannelRx, DmaChannelTx>::finishTransfer()
 		Hal::StatusFlag::CrcError |
 		Hal::StatusFlag::TiFrameError |
 		Hal::StatusFlag::ModeFault |
+#ifdef SPI_SR_TSERF
 		Hal::StatusFlag::Reload |
+#endif
 		Hal::StatusFlag::Suspension
 	);
 }

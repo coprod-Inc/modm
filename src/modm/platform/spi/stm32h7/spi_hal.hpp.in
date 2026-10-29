@@ -101,7 +101,7 @@ public:
 	/**
 	 * Configure total amount of data items of transfer
 	 * Set size to 0 for unlimited transfers.
-	 * @param reload Next transfer size after reload
+	 * @param reload Next transfer size after reload, ignored on devices without reload support
 	 */
 	static void
 	setTransferSize(uint16_t size, uint16_t reload = 0);

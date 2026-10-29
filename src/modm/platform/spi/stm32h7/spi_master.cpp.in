@@ -16,10 +16,103 @@
 // ----------------------------------------------------------------------------
 
 #include "spi_master_{{id}}.hpp"
-
+%% if sized_transfers
+#include <algorithm>
+%% endif
+%#
 namespace modm::platform
 {
 
+namespace
+{
+
+constexpr auto clearableFlags =
+	SpiHal{{ id }}::StatusFlag::EndOfTransfer |
+	SpiHal{{ id }}::StatusFlag::TxTransferFilled |
+	SpiHal{{ id }}::StatusFlag::Underrun |
+	SpiHal{{ id }}::StatusFlag::Overrun |
+	SpiHal{{ id }}::StatusFlag::CrcError |
+	SpiHal{{ id }}::StatusFlag::TiFrameError |
+	SpiHal{{ id }}::StatusFlag::ModeFault |
+#ifdef SPI_SR_TSERF
+	SpiHal{{ id }}::StatusFlag::Reload |
+#endif
+	SpiHal{{ id }}::StatusFlag::Suspension;
+%% if sized_transfers
+%#
+void
+flushRxFifo()
+{
+	while (SpiHal{{ id }}::isRxDataAvailable()) {
+		(void) SpiHal{{ id }}::read();
+	}
+}
+%% endif
+%#
+} // namespace
+%% if sized_transfers
+%#
+uint8_t
+SpiMaster{{ id }}::transfer(uint8_t data)
+{
+	uint8_t rx = 0;
+	transfer(&data, &rx, 1);
+	return rx;
+}
+
+void
+SpiMaster{{ id }}::transfer(
+		const uint8_t* tx, uint8_t* rx, std::size_t length)
+{
+	if (length == 0) {
+		return;
+	}
+
+	// TSIZE may only be written while SPE is cleared
+	if (Hal::isTransferEnabled()) {
+		Hal::disableTransfer();
+	}
+	flushRxFifo();
+	Hal::acknowledgeInterruptFlags(clearableFlags);
+
+	std::size_t offset = 0;
+	while (offset < length) {
+		const std::size_t chunk = std::min(length - offset, Hal::MaxTransferSize);
+		Hal::setTransferSize(static_cast<uint16_t>(chunk));
+		Hal::enableTransfer();
+		Hal::startMasterTransfer();
+
+		std::size_t rxIndex = 0;
+		std::size_t txIndex = 0;
+		while (rxIndex < chunk) {
+			while ((txIndex < chunk) and !Hal::isTxFifoFull() and (txIndex - rxIndex) < Hal::FifoSize) {
+				Hal::write(tx ? tx[offset + txIndex] : 0);
+				++txIndex;
+			}
+			while ((rxIndex < chunk) and Hal::isRxDataAvailable()) {
+				const uint8_t data = Hal::read();
+				if (rx) {
+					rx[offset + rxIndex] = data;
+				}
+				++rxIndex;
+			}
+			if (rxIndex < chunk) {
+				modm::this_fiber::yield();
+			}
+		}
+
+		modm::this_fiber::poll([&]{ return Hal::isTransferCompleted(); });
+		Hal::acknowledgeInterruptFlags(clearableFlags);
+		Hal::disableTransfer();
+		flushRxFifo();
+		offset += chunk;
+	}
+
+	Hal::setTransferSize(0);
+	Hal::enableTransfer();
+}
+%% else
+%#
 uint8_t
 SpiMaster{{ id }}::transfer(uint8_t data)
 {
@@ -58,7 +151,8 @@ SpiMaster{{ id }}::transfer(
 		}
 	}
 }
-
+%% endif
+%#
 void
 SpiMaster{{ id }}::finishTransfer()
 {
@@ -66,18 +160,11 @@ SpiMaster{{ id }}::finishTransfer()
 		modm::this_fiber::poll([&]{ return Hal::status() & Hal::StatusFlag::TxTransferComplete; });
 		Hal::disableTransfer();
 	}
-
-	Hal::acknowledgeInterruptFlags(
-		Hal::StatusFlag::EndOfTransfer |
-		Hal::StatusFlag::TxTransferFilled |
-		Hal::StatusFlag::Underrun |
-		Hal::StatusFlag::Overrun |
-		Hal::StatusFlag::CrcError |
-		Hal::StatusFlag::TiFrameError |
-		Hal::StatusFlag::ModeFault |
-		Hal::StatusFlag::Reload |
-		Hal::StatusFlag::Suspension
-	);
+%% if sized_transfers
+	flushRxFifo();
+%% endif
+%#
+	Hal::acknowledgeInterruptFlags(clearableFlags);
 }
 
 } // namespace modm::platform

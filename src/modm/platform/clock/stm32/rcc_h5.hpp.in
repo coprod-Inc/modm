@@ -86,11 +86,30 @@ public:
 
 public:
 	// clock sources
+	/// HSI output divider (RCC_CR.HSIDIV). Must not be changed while HSI feeds an enabled PLL.
+	enum class
+	HsiDivider : uint32_t
+	{
+		Div1 = 0,
+		Div2 = RCC_CR_HSIDIV_0,
+		Div4 = RCC_CR_HSIDIV_1,
+		Div8 = RCC_CR_HSIDIV_1 | RCC_CR_HSIDIV_0,
+	};
+
 	static inline bool
 	enableHsiClock(uint32_t waitLoops = 0x10000)
 	{
 		RCC->CR |= RCC_CR_HSION;
 		while (not (RCC->CR & RCC_CR_HSIRDY) and --waitLoops) ;
+		return waitLoops;
+	}
+
+	/// Set HSIDIV and wait until the new ratio has propagated (HSIDIVF).
+	static inline bool
+	setHsiDivider(HsiDivider div, uint32_t waitLoops = 0x10000)
+	{
+		RCC->CR = (RCC->CR & ~RCC_CR_HSIDIV_Msk) | uint32_t(div);
+		while (not (RCC->CR & RCC_CR_HSIDIVF) and --waitLoops) ;
 		return waitLoops;
 	}
 

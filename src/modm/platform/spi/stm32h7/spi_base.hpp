@@ -16,6 +16,7 @@
 #ifndef MODM_STM32H7_SPI_BASE_HPP
 #define MODM_STM32H7_SPI_BASE_HPP
 
+#include <compare>
 #include <cstdint>
 #include "../device.hpp"
 #include <modm/architecture/interface/register.hpp>
@@ -46,7 +47,9 @@ public:
 		CrcError 				= SPI_IER_CRCEIE,
 		TiFrameError			= SPI_IER_TIFREIE,
 		ModeFault				= SPI_IER_MODFIE,
+#ifdef SPI_IER_TSERFIE
 		Reload					= SPI_IER_TSERFIE
+#endif
 	};
 	MODM_FLAGS32(Interrupt);
 
@@ -63,7 +66,9 @@ public:
 		CrcError 				= SPI_SR_CRCE,
 		TiFrameError			= SPI_SR_TIFRE,
 		ModeFault				= SPI_SR_MODF,
+#ifdef SPI_SR_TSERF
 		Reload					= SPI_SR_TSERF,
+#endif
 		Suspension				= SPI_SR_SUSP,
 		TxTransferComplete		= SPI_SR_TXC,
 		RxFifoLevel1			= SPI_SR_RXPLVL_1,
