@@ -41,7 +41,10 @@ modm::platform::Adc{{ id }}::initialize(const ClockMode clk,
 %% if clock_mux
 	// select clock source
 %% if target["family"] in ["h5"]
-	RCC->{{ ccipr }} = (RCC->{{ ccipr }} & ~RCC_{{ ccipr }}_ADCDACSEL) | static_cast<uint32_t>(clk_src);
+	// ADCDACSEL is shared with the DAC, only change it if the ADC uses it
+	if (clk == ClockMode::Asynchronous) {
+		RCC->{{ ccipr }} = (RCC->{{ ccipr }} & ~RCC_{{ ccipr }}_ADCDACSEL) | static_cast<uint32_t>(clk_src);
+	}
 %% else
 	RCC->{{ ccipr }} |= static_cast<uint32_t>(clk_src);
 %% endif
