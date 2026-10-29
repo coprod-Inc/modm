@@ -4,6 +4,7 @@
 # Copyright (c) 2016-2018, Niklas Hauser
 # Copyright (c) 2017, Fabian Greif
 # Copyright (c) 2022-2023, Christopher Durand
+# Copyright (c) 2026, coprod LLC
 #
 # This file is part of the modm project.
 #
@@ -58,6 +59,10 @@ class Instance(Module):
                 assert(len(channels) == 14)
             elif target["family"] == "h7":
                 channels = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
+            elif target["family"] == "h5":
+                # Channel 16: VSENSE
+                # Channel 17: VREFINT
+                channels = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,18,19]
             else:
                 # 11-14 reserved
                 channels = [1,2,3,4,5,6,7,8,9,10,15,16,17,18]
@@ -87,6 +92,10 @@ class Instance(Module):
                     # Channel 16: DAC1 OUT1
                     # Channel 17: DAC1 OUT2
                     channels = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,18,19]
+            elif target["family"] == "h5":
+                # Channel 16: VBAT/4
+                # Channel 17: VDDCORE
+                channels = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,18,19]
             else:
                 # ADC2 is connected to 16 external channels + 2 internal channels
                 channels = range(1,17)
@@ -202,8 +211,19 @@ class Instance(Module):
                 properties["id_common"] = "3"
                 properties["id_common_u"] = "3_COMMON"
             properties["clock_mux"] = True
+        elif target["family"] == "h5":
+            properties["adc_ccr"] = "ADC_CCR"
+            properties["ccipr"] = "CCIPR5"
+            properties["ahb"] = "AHB2"
+            properties["id_common"] = ""
+            properties["id_common_u"] = "12_COMMON"
+            properties["clock_mux"] = True
         else:
             raise NotImplementedError
+
+        # ADC1 is the master of the ADC1/ADC2 pair in dual mode
+        properties["dual_mode"] = (target["family"] in ["g4", "h7", "h5"] and instance_id == 1 and
+                                   2 in map(int, listify(driver["instance"])))
 
         env.substitutions = properties
         env.outbasepath = "modm/src/modm/platform/adc"
@@ -224,7 +244,12 @@ def init(module):
 
 def prepare(module, options):
     device = options[":target"]
-    if not device.has_driver("adc:stm32-f3") and not device.has_driver("adc:stm32-h7"):
+    if not (device.has_driver("adc:stm32-f3") or device.has_driver("adc:stm32-h7") or
+            (device.has_driver("adc:stm32-h5") and device.identifier.family == "h5")):
+        return False
+    # FIXME: The STM32H503 internal channels and the STM32H5E/F ADC3 are not ported yet
+    if device.identifier.family == "h5" and (device.identifier.name == "03" or
+                                             device.identifier.name[0] in ["e", "f"]):
         return False
 
     module.depends(
