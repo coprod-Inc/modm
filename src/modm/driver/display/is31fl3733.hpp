@@ -13,7 +13,7 @@
 
 #include <modm/architecture/interface/register.hpp>
 #include <modm/architecture/interface/i2c_device.hpp>
-#include <modm/processing/fiber.hpp>
+#include <modm/architecture/interface/fiber.hpp>
 #include <cstring>
 
 namespace modm
@@ -112,7 +112,7 @@ template < class I2cMaster >
 class Is31fl3733 : public is31fl3733, public modm::I2cDevice<I2cMaster>
 {
 public:
-	Is31fl3733(uint8_t address=addr()):
+	constexpr Is31fl3733(uint8_t address=addr()):
 		I2cDevice<I2cMaster>(address)
 	{}
 

@@ -89,30 +89,39 @@ The interface and behavior is similar to the C++20 `std::jthread`.
 
 ## Delayed Start
 
-Fiber are added to the scheduler automatically and start execution when the
-scheduler is run. You can disable this behavior by setting `start` to
-`modm::fiber::Start::Later` during construction and manually starting the fiber
-when it is ready, also from another fiber:
+Similar to `std::thread`, a fiber constructed with a function is added to the
+scheduler automatically and starts execution when the scheduler is run. A fiber
+constructed without a function is not started and can be started with a function
+later when it is ready, also from another fiber:
 
 ```cpp
-// fiber does not automatically start executing
-modm::Fiber fiber2(function, modm::fiber::Start::Later);
-// fiber2 is automatically executing
+// fiber2 does not execute anything yet
+modm::Fiber fiber2;
+// fiber1 is automatically executing
 modm::Fiber fiber1([&]
 {
 	modm::this_fiber::sleep_for(1s);
-	fiber2.start();
+	bool started = fiber2.start(function);
 });
 modm::fiber::Scheduler::run();
 // fiber1 waits 1s, then starts fiber2 and exits
 ```
 
+Calling `start()` without a function on a fiber that has never been given one
+does nothing and returns `false`.
+
+!!! note "`modm::fiber::Start::Later` is deprecated"
+	The `modm::fiber::Start` argument is deprecated, construct the fiber without
+	a function and call `start(function)` instead.
+
 Fibers can end by returning from their wrapper, after which they will be removed
 from the scheduler. A fiber can then be restarted again by calling `start()`,
 which will call the closure again from the beginning. Note, that the lambda
 capture is not destructed and reconstructed, but remains unchanged between
-restarts. If you need a fiber that is only callable once, you can implement this
-behavior manually with a boolean in the capture:
+restarts. The closure is only destructed when the fiber is started with a new
+function or when the fiber object is destructed. If you need a fiber that is
+only callable once, you can implement this behavior manually with a boolean
+in the capture:
 
 ```cpp
 modm::Fiber fiber([ran=false]
@@ -121,6 +130,35 @@ modm::Fiber fiber([ran=false]
 	ran = true;
 	// only called once.
 });
+```
+
+
+## Arguments
+
+Similar to `std::thread`, the fiber function can take arguments, which are
+copied into the fiber stack next to the lambda capture. A
+`modm::fiber::stop_token` can still be the first parameter:
+
+```cpp
+modm::Fiber fiber([](modm::fiber::stop_token stoken, uint8_t position)
+{
+	test(position);
+}, 2);
+// With a delayed start
+modm::Fiber<1024> fiber2;
+bool started = fiber2.start(function, 2, 4);
+```
+
+The arguments are passed to the function as lvalues so that they remain valid
+when the fiber is restarted. Use a reference parameter for move-only types.
+
+Starting a fiber with a new function and arguments destructs the old ones and
+constructs the new ones on the stack. Like `start()`, this returns `false`
+without changing anything while the fiber is running:
+
+```cpp
+// later, once fiber.isRunning() is false
+bool started = fiber.start([](uint8_t position) { test(position); }, 4);
 ```
 
 
@@ -370,8 +408,9 @@ The default stack size is **1MiB**.
 When using this module in combination with the `modm:platform:multicore` module,
 each core gets its own fiber scheduler, which will internally be selected based
 on the CPU ID. Since the scheduler is not thread-safe, you cannot add fibers
-from one core to the other. Instead you must construct the fiber without
-starting it, and when executing on the other core, `start()` it in that context.
+from one core to the other. Instead you must construct the fiber without a
+function, and when executing on the other core, `start(function)` it in that
+context.
 
 Here is an example for the RP2040 device, which additionally allocates the stack
 and task into the core-affine memory:
@@ -380,12 +419,12 @@ and task into the core-affine memory:
 // allocate into core0 memory
 modm_faststack_core0 modm::Fiber fiber0(function);
 // allocate into core1 memory but DO NOT start yet!
-modm_faststack_core1 modm::Fiber fiber1(function, modm::fiber::Start::Later);
+modm_faststack_core1 modm::Fiber fiber1;
 
 void core1_main()
 {
 	// start fiber1 in the core1 context!
-	fiber1.start();
+	(void) fiber1.start(function);
 	modm::fiber::Scheduler::run();
 }
 

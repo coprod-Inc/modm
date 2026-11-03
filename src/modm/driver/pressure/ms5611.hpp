@@ -16,7 +16,7 @@
 
 #include "ms5611_data.hpp"
 
-#include <modm/processing/fiber.hpp>
+#include <modm/architecture/interface/fiber.hpp>
 #include <modm/architecture/interface/spi_device.hpp>
 
 namespace modm
@@ -85,7 +85,7 @@ public:
     /**
 	 * @param	data pointer to buffer of the internal data of type Data
 	 */
-    Ms5611(DataBase &data);
+    constexpr Ms5611(DataBase &data);
 
     /// Call this function before using the device to read the factory calibration
     /// @warning calls to this function resets the device

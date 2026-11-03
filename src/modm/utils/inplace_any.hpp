@@ -207,7 +207,7 @@ private:
     void move_from(inplace_any<S>&& other) noexcept;
 
 private:
-    modm::aligned_storage<Size>::type storage_;
+    alignas(default_storage_alignment<Size>) std::byte storage_[Size];
     inplace_any_impl::HandlerFunc handler_{nullptr};
 };
 
@@ -301,7 +301,7 @@ auto any_cast(const inplace_any<Size>& any) noexcept
         return *reinterpret_cast<const Type*>(&any.storage_);
     } else {
         modm_assert(0, "bad_any_cast", "can't cast modm::inplace_any to type", &any);
-        __builtin_unreachable();
+        std::unreachable();
     }
 }
 
@@ -314,7 +314,7 @@ auto any_cast(inplace_any<Size>& any) noexcept
         return *reinterpret_cast<Type*>(&any.storage_);
     } else {
         modm_assert(0, "bad_any_cast", "can't cast modm::inplace_any to type", &any);
-        __builtin_unreachable();
+        std::unreachable();
     }
 }
 

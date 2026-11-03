@@ -18,7 +18,7 @@
 // ----------------------------------------------------------------------------
 template <typename T,
 		  template <typename> class Accessor>
-modm::interpolation::Lagrange<T, Accessor>::Lagrange(
+constexpr modm::interpolation::Lagrange<T, Accessor>::Lagrange(
 		Accessor<T> supportingPoints, uint8_t numberOfPoints) :
 	supportingPoints(supportingPoints), numberOfPoints(numberOfPoints)
 {
@@ -28,7 +28,7 @@ modm::interpolation::Lagrange<T, Accessor>::Lagrange(
 
 template <typename T,
 		  template <typename> class Accessor>
-typename modm::interpolation::Lagrange<T, Accessor>::OutputType
+constexpr typename modm::interpolation::Lagrange<T, Accessor>::OutputType
 modm::interpolation::Lagrange<T, Accessor>::interpolate(const InputType& value) const
 {
 	OutputType ret = 0;
@@ -38,12 +38,12 @@ modm::interpolation::Lagrange<T, Accessor>::interpolate(const InputType& value) 
 		for (uint8_t j = 0; j < this->numberOfPoints; ++j)
 		{
 			if (i != j) {
-				li *= static_cast<OutputType>(value - this->supportingPoints[j].getFirst()) /
-					  static_cast<OutputType>(this->supportingPoints[i].getFirst() -
-							  this->supportingPoints[j].getFirst());
+				li *= static_cast<OutputType>(value - this->supportingPoints[j].first) /
+					  static_cast<OutputType>(this->supportingPoints[i].first -
+							  this->supportingPoints[j].first);
 			}
 		}
-		ret += li * this->supportingPoints[i].getSecond();
+		ret += li * this->supportingPoints[i].second;
 	}
 
 	return ret;

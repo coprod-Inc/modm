@@ -17,9 +17,9 @@
 
 xpcc::Postman::DeliverInfo
 FakePostman::deliverPacket(const xpcc::Header& header,
-			const modm::SmartPointer& payload)
+			const xpcc::SmartPointer& payload)
 {
-	this->messagesToDeliver.append(Message(header, payload));
+	this->messagesToDeliver.push_back(Message(header, payload));
 
 	if (header.type != xpcc::Header::Type::REQUEST)
 		return ERROR;

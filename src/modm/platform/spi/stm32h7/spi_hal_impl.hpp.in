@@ -49,7 +49,9 @@ SpiHal{{ id }}::initialize(Prescaler prescaler,
 		StatusFlag::CrcError |
 		StatusFlag::TiFrameError |
 		StatusFlag::ModeFault |
+%% if target.family != "h5"
 		StatusFlag::Reload |
+%% endif
 		StatusFlag::Suspension
 	);
 
@@ -141,7 +143,12 @@ inline void
 SpiHal{{ id }}::setTransferSize(uint16_t size, uint16_t reload)
 {
 	static_assert(SPI_CR2_TSIZE_Pos == 0);
+#ifdef SPI_CR2_TSER
 	SPI{{ id }}->CR2 = (reload << SPI_CR2_TSER_Pos) | size;
+#else
+	(void) reload; // no reload on H7R/S
+	SPI{{ id }}->CR2 = size;
+#endif
 }
 
 inline void
@@ -188,8 +195,9 @@ SpiHal{{ id }}::write16(uint16_t data)
 {
 	// Write with 16-bit access
 	// SPI{{ id }}->TXDR is of type "volatile uint32_t".
-	// [[gnu::may_alias]] is required to avoid undefined behaviour due to strict aliasing violations.
-	auto* const [[gnu::may_alias]] ptr = reinterpret_cast<__IO uint16_t*>(&SPI{{ id }}->TXDR);
+	// may_alias is required to avoid undefined behaviour due to strict aliasing violations.
+	using Reg16 = __IO uint16_t __attribute__((__may_alias__));
+	auto* const ptr = reinterpret_cast<Reg16*>(&SPI{{ id }}->TXDR);
 	*ptr = data;
 }
 
@@ -211,8 +219,9 @@ SpiHal{{ id }}::read16()
 {
 	// Read with 16-bit access
 	// SPI{{ id }}->RXDR is of type "const volatile uint32_t".
-	// [[gnu::may_alias]] is required to avoid undefined behaviour due to strict aliasing violations.
-	auto* const [[gnu::may_alias]] ptr = reinterpret_cast<const __IO uint16_t*>(&SPI{{ id }}->RXDR);
+	// may_alias is required to avoid undefined behaviour due to strict aliasing violations.
+	using Reg16 = const __IO uint16_t __attribute__((__may_alias__));
+	auto* const ptr = reinterpret_cast<Reg16*>(&SPI{{ id }}->RXDR);
 	return *ptr;
 }
 
@@ -259,7 +268,9 @@ SpiHal{{ id }}::acknowledgeInterruptFlags(StatusFlag_t flags)
 		SPI_IFCR_CRCEC |
 		SPI_IFCR_TIFREC |
 		SPI_IFCR_MODFC |
+#ifdef SPI_IFCR_TSERFC
 		SPI_IFCR_TSERFC |
+#endif
 		SPI_IFCR_SUSPC;
 
 	SPI{{ id }}->IFCR = flags.value & mask;

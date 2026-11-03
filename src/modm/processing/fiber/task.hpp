@@ -13,7 +13,7 @@
 
 #include "context.h"
 #include "stack.hpp"
-#include "stop_token.hpp"
+#include <modm/architecture/interface/fiber/stop_token.hpp>
 #include <modm/architecture/interface/fiber.hpp>
 #include <type_traits>
 
@@ -27,9 +27,11 @@ namespace fiber
 class Scheduler;
 
 /// The Fiber scheduling policy.
+/// @deprecated Construct the fiber without a closure and call
+///             `start(closure, args...)` instead.
 /// @ingroup modm_processing_fiber
 enum class
-Start
+Start // DEPRECATED: 2027q4
 {
 	Now,	// Automatically add the fiber to the active scheduler.
 	Later,	// Manually add the fiber to a scheduler.
@@ -64,19 +66,45 @@ class Task
 	Task* next;
 	Scheduler *scheduler{nullptr};
 	stop_state stop{};
+	// Destroys the closure at the top of the stack, nullptr if trivial
+	void (*destroy)(uintptr_t*){nullptr};
+	// The top of the stack memory, since ctx.top is below the closure
+	uintptr_t *end;
+
+protected:
+	/// Destroys the previous closure and constructs the new one with the
+	/// arguments bound to it on the stack. The task must not be running!
+	/// @tparam Size	The stack size to check the closure size at compile time,
+	///					or zero to check it at runtime.
+	template<size_t Size, class Callable, class... Args>
+	void
+	emplace(Callable&& closure, Args&&... args);
 
 public:
+	/// Constructs a task without a closure, which is not started.
 	/// @param stack	A stack object that is *NOT* shared with other tasks.
-	/// @param closure	A callable object of signature `void()`.
-	/// @param start	When to start this task.
+	template<size_t Size>
+	explicit
+	Task(Stack<Size>& stack);
+
+	/// Constructs and starts the task like `std::thread`.
+	/// @param stack	A stack object that is *NOT* shared with other tasks.
+	/// @param closure	A callable object of signature `void(args...)`.
+	/// @param args		Arguments that are copied into the stack and passed to
+	/// 				the closure every time the task is started.
+	template<size_t Size, class Callable, class... Args>
+	Task(Stack<Size>& stack, Callable&& closure, Args&&... args);
+
 	template<size_t Size, class Callable>
-	Task(Stack<Size>& stack, Callable&& closure, Start start=Start::Now);
+	[[deprecated("Construct without closure and call start(closure) instead!")]]
+	Task(Stack<Size>& stack, Callable&& closure, Start start); // DEPRECATED: 2027q4
 
 	inline
 	~Task()
 	{
 		request_stop();
 		join();
+		if (destroy and not isRunning()) destroy(ctx.top);
 	}
 
 	/// Returns the number of concurrent threads supported by the implementation.
@@ -141,10 +169,19 @@ public:
 		return modm_context_stack_size(&ctx);
 	}
 
-	/// Adds the task to the currently active scheduler, if not already running.
+	/// Adds the task to the currently active scheduler, if not already running
+	/// and if it has a closure.
 	/// @returns if the fiber has been scheduled.
 	bool
 	start();
+
+	/// Replaces the closure and its arguments and adds the task to the
+	/// currently active scheduler, if not already running.
+	/// @warning The closure size is checked against the stack size at runtime.
+	/// @returns if the fiber has been scheduled.
+	template<class Callable, class... Args>
+	[[nodiscard]] bool
+	start(Callable&& closure, Args&&... args);
 
 	/// @returns if the fiber is attached to a scheduler.
 	[[nodiscard]] bool inline
@@ -180,10 +217,41 @@ class Fiber : public fiber::Task
 {
 	fiber::Stack<StackSize> stack;
 public:
-	template<class T>
-	Fiber(T&& task, fiber::Start start=fiber::Start::Now)
-	: Task(stack, std::forward<T>(task), start)
-	{}
+	/// Constructs a fiber without a closure, which is not started.
+	Fiber() : Task(stack) {}
+
+	/// Constructs and starts the fiber like `std::thread`.
+	template<class Callable, class... Args>
+	explicit
+	Fiber(Callable&& closure, Args&&... args)
+	: Task(stack)
+	{
+		emplace<StackSize>(std::forward<Callable>(closure), std::forward<Args>(args)...);
+		Task::start();
+	}
+
+	template<class Callable>
+	[[deprecated("Construct without closure and call start(closure) instead!")]]
+	Fiber(Callable&& closure, fiber::Start start) // DEPRECATED: 2027q4
+	: Task(stack)
+	{
+		emplace<StackSize>(std::forward<Callable>(closure));
+		if (start == fiber::Start::Now) Task::start();
+	}
+
+	using Task::start;
+
+	/// Replaces the closure and its arguments and adds the fiber to the
+	/// currently active scheduler, if it is not already running.
+	/// @returns if the fiber has been scheduled.
+	template<class Callable, class... Args>
+	[[nodiscard]] bool
+	start(Callable&& closure, Args&&... args)
+	{
+		if (isRunning()) return false;
+		emplace<StackSize>(std::forward<Callable>(closure), std::forward<Args>(args)...);
+		return Task::start();
+	}
 };
 
 }	// namespace modm

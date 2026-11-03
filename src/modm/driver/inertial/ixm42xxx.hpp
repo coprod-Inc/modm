@@ -17,7 +17,7 @@
 #include "ixm42xxx_data.hpp"
 #include "ixm42xxx_definitions.hpp"
 #include "ixm42xxx_transport.hpp"
-#include <modm/processing/fiber.hpp>
+#include <modm/architecture/interface/fiber.hpp>
 
 namespace modm
 {
@@ -43,7 +43,7 @@ public:
      * @param data A ixm42xxx::data object
      * @param address the I2C address of the device
      */
-    Ixm42xxx(Data &data, uint8_t address = 0b11010000);
+    constexpr Ixm42xxx(Data &data, uint8_t address = 0b11010000);
 
     /**
      * @brief Initialize the device to use default settings and the endianess of the microcontroller

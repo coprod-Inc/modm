@@ -153,7 +153,7 @@ def post_build(env):
     has_nanopb = env.has_module(":nanopb")
     repositories = [p for p in env.buildlog.repositories if isdir(env.real_outpath(p, basepath="."))]
     repositories.sort(key=lambda name: "0" if name == "modm" else name)
-    generated_paths = [join(env.relcwdoutpath(""), r) for r in repositories]
+    generated_paths = [env.relcwdoutpath("") + "/" + r for r in repositories]
 
     subs = env.query("::device")
     cache_dir = env["cache_dir"]
@@ -224,6 +224,7 @@ def post_build(env):
             files.append( (f, repo_flags[f]) )
 
         include_paths = env.collector_values("::path.include", filterfunc=repo_filter)
+        system_include_paths = env.collector_values("::path.include.system", filterfunc=repo_filter)
         libary_paths = env.collector_values("::path.library", filterfunc=repo_filter)
         libaries = env.collector_values("::library", filterfunc=repo_filter)
         packages = env.collector_values("::pkg-config", filterfunc=repo_filter)
@@ -237,6 +238,7 @@ def post_build(env):
             "libraries": libaries,
             "library_paths": libary_paths,
             "include_paths": include_paths,
+            "system_include_paths": system_include_paths,
             "packages": packages,
             "toolpaths": toolpaths,
             "tools": tools,

@@ -38,7 +38,7 @@ def common_rcc_map(env):
     features = re.findall(r"#define +__([MF]PU)_PRESENT +([01])", content)
     core_features = {f[0]:bool(int(f[1])) for f in features}
     # find all peripherals
-    mperipherals = re.findall(r"#define +(.*?) +\(\((.*?_Type(?:Def)?)", content)
+    mperipherals = re.findall(r"#define +(\w+) +\(\((\w*?_Type(?:Def)?)", content)
     # We only care about the absolute peripheral addresses
     peripherals = [(p[0],p[1]) for p in mperipherals]
     # filter out MPU and/or FPU if required
@@ -163,13 +163,14 @@ def validate(env):
 
 def build(env):
     env.collect(":build:path.include", "modm/ext")
-    env.collect(":build:path.include", "modm/ext/cmsis/device")
+    env.collect(":build:path.include.system", "modm/ext/cmsis/device")
     env.collect(":build:cppdefines", bprops["family_define"])
 
     env.outbasepath = "modm/ext/cmsis/device"
-    env.copy(localpath(bprops["folder"], bprops["device_header"]), bprops["device_header"])
-    env.copy(localpath(bprops["folder"], bprops["system_header"]), bprops["system_header"])
-    env.copy(localpath(bprops["folder"], bprops["family_header"]), bprops["family_header"])
+    headers = [bprops["device_header"], bprops["system_header"], bprops["family_header"]]
+    patch = localpath("patches", Path(bprops["folder"]).parent.name + ".patch")
+    env.copy(localpath(bprops["folder"]), ".", patch=patch if Path(patch).exists() else None,
+             ignore=lambda path, files: [f for f in files if f not in headers])
 
     env.substitutions = bprops
     env.substitutions.update({

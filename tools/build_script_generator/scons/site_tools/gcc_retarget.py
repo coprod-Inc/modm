@@ -15,6 +15,7 @@
 import os
 from os.path import realpath, dirname
 import shutil
+import subprocess
 
 from SCons.Script import *
 
@@ -31,8 +32,13 @@ def list_symbols(env, source):
 
 
 def generate(env, **kw):
-    env.Tool('gcc')
-    env.Tool('g++')
+    compiler = env.get('COMPILER', 'gcc')
+    if compiler == 'gcc':
+        env.Tool('gcc')
+        env.Tool('g++')
+    elif compiler == 'clang':
+        env.Tool('clang')
+        env.Tool('clang++')
     env.Tool('gnulink')
     env.Tool('ar')
     env.Tool('as')
@@ -46,19 +52,36 @@ def generate(env, **kw):
         suffix = '-' + suffix
 
     prefix = path + prefix
-    env['CC'] = prefix + 'gcc' + suffix
-    env['CXX'] = prefix + 'g++' + suffix
-    env['AR'] = prefix + 'ar'
-    env['RANLIB'] = prefix + 'ranlib'
-    if suffix == '':
-        env['AS'] = prefix + 'as'
-        env['NM'] = prefix + 'nm'
+    if compiler == 'gcc':
+        env['CC'] = prefix + 'gcc' + suffix
+        env['CXX'] =  prefix + 'g++' + suffix
+    elif compiler == 'clang':
+        env['CC'] = prefix + 'clang' + suffix
+        env['CXX'] =  prefix + 'clang++' + suffix
     else:
-        env['AS'] = prefix + 'gcc' + suffix
-        env['NM'] = prefix + 'gcc-nm' + suffix
-        if sys.platform != "darwin":
-            env['AR'] = prefix + 'gcc-ar' + suffix
-            env['RANLIB'] = prefix + 'gcc-ranlib' + suffix
+        raise RuntimeError(f'Unsupported compiler: "{compiler}"')
+
+    env['AR'] = prefix + 'ar'
+    # Many object files exceed the command line length on Windows. The response
+    # file needs forward slashes, since ar reads a backslash as an escape there.
+    env['ARCOM'] = "${TEMPFILE('$AR $ARFLAGS $TARGET.posix $SOURCES.posix','$ARCOMSTR')}"
+    env['RANLIB'] = prefix + 'ranlib'
+    env['AS'] = prefix + 'as' if suffix == '' else prefix + 'gcc' + suffix
+
+    env['NM'] = prefix + 'nm'
+    if compiler == 'gcc':
+        for var, wrapper in [('AR', 'gcc-ar'), ('RANLIB', 'gcc-ranlib'), ('NM', 'gcc-nm')]:
+            if shutil.which(prefix + wrapper + suffix) is not None:
+                env[var] = prefix + wrapper + suffix
+    elif compiler == 'clang':
+        for var, wrapper in [('AR', 'llvm-ar'), ('RANLIB', 'llvm-ranlib'), ('NM', 'llvm-nm')]:
+            tool = prefix + wrapper + suffix
+            # Lookup matching llvm tools with clang command
+            if shutil.which(tool) is None and shutil.which(env['CC']) is not None:
+                tool = subprocess.run([env['CC'], '-print-prog-name=' + wrapper],
+                                      capture_output=True, text=True).stdout.strip()
+            if shutil.which(tool) is not None:
+                env[var] = tool
 
     env['OBJCOPY'] = prefix + 'objcopy'
     env['OBJDUMP'] = prefix + 'objdump'
@@ -66,6 +89,8 @@ def generate(env, **kw):
     env['STRIP'] = prefix + 'strip'
 
     env['LINK'] = env['CXX']
+    # Many application object files exceed the command line length on Windows.
+    env['LINKCOM'] = "${TEMPFILE('$LINK -o $TARGET.posix $LINKFLAGS $__RPATH $SOURCES.posix $_LIBDIRFLAGS $_LIBFLAGS','$LINKCOMSTR')}"
 
     builder_hex = Builder(
         action=Action("$OBJCOPY -O ihex $SOURCE $TARGET",

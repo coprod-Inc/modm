@@ -15,7 +15,7 @@
 #define MODM_ST7036_HPP
 
 #include <modm/ui/display/character_display.hpp>
-#include <modm/processing/fiber.hpp>
+#include <modm/architecture/interface/fiber.hpp>
 
 namespace modm
 {
@@ -38,7 +38,7 @@ namespace modm
 	{
 	public:
 		/// Constructor
-		St7036();
+		constexpr St7036();
 
 		/**
 		 * \brief	Initialize the display

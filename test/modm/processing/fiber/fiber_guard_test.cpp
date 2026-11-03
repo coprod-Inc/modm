@@ -22,11 +22,13 @@ using guard_t = int32_t;
 using guard_t = int64_t;
 #endif
 
+#ifndef MODM_OS_HOSTED
 int __cxa_guard_acquire(guard_t*);
 void __cxa_guard_release(guard_t*);
 void __cxa_guard_abort(guard_t*);
 
 static guard_t guard{0};
+#endif
 
 }
 
@@ -37,6 +39,7 @@ FiberGuardTest::setUp()
 }
 
 // ================================== GUARD ===================================
+#ifndef MODM_OS_HOSTED
 static void
 f1()
 {
@@ -63,12 +66,13 @@ f2()
 	TEST_ASSERT_EQUALS(state++, 3u);
 	TEST_ASSERT_EQUALS(guard, guard_t(1));
 }
-
+#endif
 
 void
 FiberGuardTest::testGuard()
 {
-#ifndef MODM_OS_HOSTED
+// AVR cannot detect interrupt context, so contended guards always assert
+#if not defined(MODM_OS_HOSTED) and not defined(MODM_CPU_AVR)
 	modm::fiber::Task fiber1(stack1, f1), fiber2(stack2, f2);
 	modm::fiber::Scheduler::run();
 #endif

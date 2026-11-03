@@ -28,6 +28,10 @@ endef
 
 run-hosted-linux:
 	$(call compile-test,hosted,run,-D":target=hosted-linux")
+run-hosted-linux-clang:
+	$(call compile-test,hosted-clang,run,-D":target=hosted-linux")
+run-hosted-linux-no-fiber:
+	$(call compile-test,hosted-no-fiber,run,-D":target=hosted-linux")
 run-hosted-linux-arm64:
 	$(call compile-test,hosted,run,-D":target=hosted-linux-arm64")
 run-hosted-darwin:
@@ -56,6 +60,10 @@ compile-nucleo-f103rb_B:
 	$(call compile-test,nucleo-f103rb_B,size)
 run-nucleo-f103rb_B:
 	$(call run-test,nucleo-f103rb_B,size)
+compile-nucleo-f103rb_C:
+	$(call compile-test,nucleo-f103rb_C,size)
+run-nucleo-f103rb_C:
+	$(call run-test,nucleo-f103rb_C,size)
 
 
 compile-nucleo-f401re:
@@ -203,6 +211,10 @@ compile-mega-2560-pro_C:
 	$(call compile-test,mega-2560-pro_C,size)
 run-mega-2560-pro_C:
 	$(call run-test,mega-2560-pro_C,size)
+compile-mega-2560-pro_D:
+	$(call compile-test,mega-2560-pro_D,size)
+run-mega-2560-pro_D:
+	$(call run-test,mega-2560-pro_D,size)
 
 
 compile-samv71-xplained-ultra:

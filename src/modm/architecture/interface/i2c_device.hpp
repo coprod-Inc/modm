@@ -15,7 +15,8 @@
 #include "i2c.hpp"
 #include "i2c_master.hpp"
 #include "i2c_transaction.hpp"
-#include <modm/processing/fiber.hpp>
+#include <modm/architecture/interface/fiber.hpp>
+#include <modm/architecture/interface/clock.hpp>
 
 namespace modm
 {
@@ -32,6 +33,10 @@ namespace modm
  * You can choose to use your own custom I2c Transaction Adapter, by providing a class subclassed from
  * an existing I2cAdapter or which implements the I2cTransaction interface manually.
  *
+ * A transaction that does not finish within the timeout, for example because a
+ * device holds the bus, fails and resets the I2C master with `I2cMaster::reset()`.
+ * This also detaches the transactions of the other devices on the same bus.
+ *
  * @tparam	I2cMaster		an I2cMaster conforming to the I2cMaster interface.
  * @tparam	NestingLevels	number of nesting levels required for your driver
  * @tparam	Transaction		a class conforming to the I2cTransaction interface.
@@ -45,7 +50,7 @@ class I2cDevice
 {
 public:
 	///	@param	address	the slave address not yet shifted left (address < 128).
-	I2cDevice(uint8_t address)
+	constexpr I2cDevice(uint8_t address)
 	:	transaction(address), configuration(nullptr)
 	{
 	}
@@ -66,9 +71,17 @@ public:
 		configuration = handler;
 	}
 
+	/// Sets the time a transaction may take including the wait for the bus,
+	/// zero waits forever. Devices that stretch the clock may need longer.
+	void inline
+	setTimeout(std::chrono::milliseconds timeout)
+	{
+		this->timeout = timeout;
+	}
+
 	/// @retval true	device responds to address
 	/// @retval false	no device with address found
-	bool
+	[[nodiscard]] bool
 	ping()
 	{
 		modm::this_fiber::poll([&]{ return transaction.configurePing(); });
@@ -76,7 +89,7 @@ public:
 	}
 
 	/// Starts a write-read transaction and waits until finished.
-	bool
+	[[nodiscard]] bool
 	writeRead(const uint8_t *writeBuffer, std::size_t writeSize,
 			  uint8_t *readBuffer, std::size_t readSize)
 	{
@@ -85,7 +98,7 @@ public:
 	}
 
 	/// Starts a write transaction and waits until finished.
-	bool
+	[[nodiscard]] bool
 	write(const uint8_t *buffer, std::size_t size)
 	{
 		modm::this_fiber::poll([&]{ return transaction.configureWrite(buffer, size); });
@@ -93,7 +106,7 @@ public:
 	}
 
 	/// Starts a write transaction and waits until finished.
-	bool
+	[[nodiscard]] bool
 	read(uint8_t *buffer, std::size_t size)
 	{
 		modm::this_fiber::poll([&]{ return transaction.configureRead(buffer, size); });
@@ -129,12 +142,23 @@ protected:
 		return (transaction.getState() != modm::I2c::TransactionState::Error);
 	}
 
-	/// Starts our own transaction and waits until finished.
+	/// Starts our own transaction and waits until finished or the timeout expired.
 	bool
 	runTransaction()
 	{
-		modm::this_fiber::poll([&]{ return startTransaction(); });
-		modm::this_fiber::poll([&]{ return not isTransactionRunning(); });
+		// let the master time the bus access out as well
+		I2cMaster::setTransactionTimeout(timeout);
+		const auto start = modm::Clock::now();
+		const auto expired = [&] { return timeout.count() and modm::Clock::now() - start > timeout; };
+		bool started{false};
+		modm::this_fiber::poll([&]{ return (started = startTransaction()) or expired(); });
+		if (started) modm::this_fiber::poll([&]{ return not isTransactionRunning() or expired(); });
+		if (not started or isTransactionRunning())
+		{
+			// The bus is stuck: detach all transactions and reset the master
+			I2cMaster::reset();
+			return false;
+		}
 		return wasTransactionSuccessful();
 	}
 
@@ -142,6 +166,7 @@ protected:
 	Transaction transaction;
 private:
 	I2c::ConfigurationHandler configuration;
+	std::chrono::milliseconds timeout{100};
 };
 
 }	// namespace modm

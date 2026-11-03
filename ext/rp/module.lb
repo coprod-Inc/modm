@@ -24,7 +24,8 @@ def prepare(module, options):
     return True
 
 def build(env):
-    env.collect(":build:path.include", "modm/ext/cmsis_device")
+    # The CMSIS header redefines the register base addresses of hardware/regs
+    env.collect(":build:path.include.system", "modm/ext/cmsis_device")
 
     device = env[":target"]
 
@@ -35,12 +36,13 @@ def build(env):
         device.identifier.string.upper() + ".h"
     ]
 
-    env.copy("pico-sdk/include", "")
+    env.copy("pico-sdk/rp2040", "")
     env.copy("address_mapped.h", "hardware/address_mapped.h")
 
     if env.has_module(":tinyusb"):
         env.substitutions = {
-            "with_debug": env.has_module(":debug")
+            "with_debug": env.has_module(":debug"),
+            "with_multicore": env.has_module(":platform:multicore"),
         }
         env.copy("pico.h")
         env.template("pico.cpp.in", "pico.cpp")
@@ -48,6 +50,7 @@ def build(env):
         env.copy("timer.h", "hardware/timer.h")
         env.copy("resets.h", "hardware/resets.h")
         env.copy("sync.h", "hardware/sync.h")
+        env.copy("critical_section.h", "pico/critical_section.h")
 
     env.substitutions = {
         "headers": headers,

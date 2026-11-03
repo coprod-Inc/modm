@@ -103,6 +103,8 @@ def build(env):
     target = env[":target"].identifier
     if target.platform == "stm32":
         tusb_config["CFG_TUSB_MCU"] = f"OPT_MCU_STM32{target.family.upper()}"
+        if target.family == "h7" and target.name[0] in ["r", "s"]:
+            tusb_config["CFG_TUSB_MCU"] = "OPT_MCU_STM32H7RS"
         # TODO: use modm-devices driver type for this
         fs_dev = (target.family in ["f0", "f3", "l0", "g0", "g4", "h5", "u0", "u3"] or
                  (target.family == "f1" and target.name <= "03"))
@@ -126,6 +128,9 @@ def build(env):
             tusb_config["CFG_TUSB_MCU"] = "OPT_MCU_RP2040"
             tusb_config["TUD_OPT_RP2040_USB_DEVICE_UFRAME_FIX"] = "0"
             env.copy("tinyusb/src/portable/raspberrypi/rp2040/", "portable/raspberrypi/rp2040/")
+            # rp2040_usb.c includes both headers unconditionally
+            if not env.has_module(":tinyusb:device"): env.copy("tinyusb/src/device/dcd.h", "device/dcd.h")
+            if not env.has_module(":tinyusb:host"): env.copy("tinyusb/src/host/hcd.h", "host/hcd.h")
 
     elif target.platform == "nrf":
         tusb_config["CFG_TUSB_MCU"] = "OPT_MCU_NRF5X"
@@ -236,8 +241,10 @@ def build(env):
     # Add support files outside of naming scheme
     if any(p == "net" for p, _ in classes): classes.update({("net", "ncm"), ("net", "net_device")})
     if ("dfu", "dfu_rt") in classes: classes.add(("dfu", "dfu"))
+    if ("midi", "midi2") in classes: classes.add(("midi", "midi"))
+    if any(p == "midi" for p, _ in classes): classes.add(("audio", "audio"))
     # Filter out classes without support files
-    classes = ((p, n) for p, n in classes if n not in ["bth", "dfu_rt", "vendor", "ecm_rndis", "ecm"])
+    classes = ((p, n) for p, n in classes if n not in ["bth", "dfu_rt", "vendor", "ecm_rndis", "ecm", "midi2"])
     # Now copy the shared support file
     for parent, name in classes:
         env.copy(f"tinyusb/src/class/{parent}/{name}.h", f"class/{parent}/{name}.h")
@@ -278,7 +285,7 @@ Configuration options:
 
     def build(self, env):
         env.outbasepath = "modm/ext/tinyusb"
-        env.copy("tinyusb/src/device/", "device/")
+        env.copy("tinyusb/src/device/", "device/", patch="usbd.c.patch")
 
 
 # -----------------------------------------------------------------------------
@@ -300,16 +307,23 @@ Configuration options:
 """
 
     def prepare(self, module, options):
-        # On STM32, only OTG has Host Mode
-        if not (options[":target"].has_driver("usb_otg_fs") or
-                options[":target"].has_driver("usb_otg_hs") or
-                options[":target"].has_driver("uhp:samg*")):
+        # On STM32, only OTG and FSDEV DRD (dual-role) have Host Mode
+        target = options[":target"]
+        # TODO: use modm-devices driver type for this
+        fsdev_drd = (target.identifier.platform == "stm32" and target.has_driver("usb") and
+                     target.identifier.family in ["g0", "h5", "u3"])
+        if not (target.has_driver("usb_otg_fs") or
+                target.has_driver("usb_otg_hs") or
+                target.has_driver("uhp:samg*") or fsdev_drd):
             return False
 
         classes = {(p.parent.name, p.name.replace("_host.c", ""))
                    for p in Path(localpath("tinyusb/src/class/")).glob("*/*_host.c")}
+        # vendor_host.c is unmaintained upstream and does not compile
+        classes.discard(("vendor", "vendor"))
         for parent, name in classes:
             module.add_submodule(TinyUsbClassModule(parent, name, "host"))
+        module.depends(":architecture:clock")
         if self.ports == 2:
             module.add_option(
                     EnumerationOption(name="port", description="USB Port selection",
@@ -329,12 +343,14 @@ tu_config_descr = {"device": {
 - `CFG_TUD_BTH_ISO_ALT_COUNT` = [undef] modm default: 1
 """,
     "cdc": """
-- `CFG_TUD_CDC_EP_BUFSIZE` = 64/512 (fs/hs)
+- `CFG_TUD_CDC_RX_EPSIZE` = 64/512 (fs/hs)
+- `CFG_TUD_CDC_TX_EPSIZE` = 64/512 (fs/hs)
 - `CFG_TUD_CDC_RX_BUFSIZE` = [undef] modm default: 512
 - `CFG_TUD_CDC_TX_BUFSIZE` = [undef] modm default: 512
 """,
     "midi": """
-- `CFG_TUD_MIDI_EP_BUFSIZE` = 64/512 (fs/hs)
+- `CFG_TUD_MIDI_RX_EPSIZE` = 64/512 (fs/hs)
+- `CFG_TUD_MIDI_TX_EPSIZE` = 64/512 (fs/hs)
 - `CFG_TUD_MIDI_RX_BUFSIZE` = [undef] modm default: 64/512 (fs/hs)
 - `CFG_TUD_MIDI_TX_BUFSIZE` = [undef] modm default: 64/512 (fs/hs)
 """,
@@ -342,7 +358,8 @@ tu_config_descr = {"device": {
 - `CFG_TUD_MSC_EP_BUFSIZE` = [undef] modm default: 512
 """,
     "vendor": """
-- `CFG_TUD_VENDOR_EPSIZE` = 64
+- `CFG_TUD_VENDOR_RX_EPSIZE` = 64/512 (fs/hs)
+- `CFG_TUD_VENDOR_TX_EPSIZE` = 64/512 (fs/hs)
 - `CFG_TUD_VENDOR_RX_BUFSIZE` = [undef] modm default: 64/512 (fs/hs)
 - `CFG_TUD_VENDOR_TX_BUFSIZE` = [undef] modm default: 64/512 (fs/hs)
 """
@@ -366,8 +383,6 @@ class TinyUsbClassModule(Module):
         if self.mode == "device":
             if self.name == "cdc":
                 module.depends(":architecture:uart")
-            if self.name == "midi":
-                module.depends(":tinyusb:device:audio")
         module.depends(":tinyusb")
         return True
 
@@ -379,16 +394,19 @@ class TinyUsbClassModule(Module):
                 continue
             file = f"class/{self.parent}/{self.name}_{self.mode}.{suffix}"
             env.copy(f"tinyusb/src/{file}", file)
+        if self.mode == "host" and self.name == "cdc":
+            env.copy("tinyusb/src/class/cdc/serial/", "class/cdc/serial/")
 
         global tusb_config
         cfg_name = f"CFG_TU{self.mode[0].upper()}_{self.name.upper()}"
         if "DFU_RT" in cfg_name: cfg_name = cfg_name.replace("_RT", "_RUNTIME")
-        tusb_config[cfg_name] = env[":tinyusb:config"].count(f"{self.mode}.{self.name}")
+        # Classes in the descriptor config are counted, otherwise enable one instance
+        tusb_config[cfg_name] = max(1, env[":tinyusb:config"].count(f"{self.mode}.{self.name}"))
         is_hs = env.get(":tinyusb:max-speed", "full") == "high"
 
         if self.mode == "device":
             # These are the defaults that don't crash TinyUSB.
-            if self.name in ["cdc", "midi", "vendor"]:
+            if self.name in ["cdc", "midi", "vendor", "printer"]:
                 tusb_config[cfg_name+"_RX_BUFSIZE"] = 512 if is_hs else 64
                 tusb_config[cfg_name+"_TX_BUFSIZE"] = 512 if is_hs else 64
             if self.name in ["msc"]:

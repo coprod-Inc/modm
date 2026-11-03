@@ -26,6 +26,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <type_traits>
 #include <utility>
 #include <functional>
@@ -118,7 +119,7 @@ struct is_valid_inplace_dst : std::true_type
 template<
     class Signature,
     size_t Capacity = inplace_function_detail::InplaceFunctionDefaultCapacity,
-    size_t Alignment = alignof(modm::aligned_storage_t<Capacity>)
+    size_t Alignment = default_storage_alignment<Capacity>
 >
 class inplace_function; // unspecified
 
@@ -140,7 +141,6 @@ template<
 >
 class inplace_function<R(Args...), Capacity, Alignment>
 {
-    using storage_t = modm::aligned_storage_t<Capacity, Alignment>;
     using vtable_t = inplace_function_detail::vtable<R, Args...>;
     using vtable_ptr_t = const vtable_t*;
 
@@ -150,8 +150,8 @@ public:
     using capacity = std::integral_constant<size_t, Capacity>;
     using alignment = std::integral_constant<size_t, Alignment>;
 
-    inplace_function() noexcept :
-        vtable_ptr_{std::addressof(inplace_function_detail::empty_vtable<R, Args...>)}
+    constexpr inplace_function() noexcept :
+        vtable_ptr_{std::addressof(inplace_function_detail::empty_vtable<R, Args...>)}, storage_{}
     {}
 
     template<
@@ -202,8 +202,8 @@ public:
         other.vtable_ptr_ = std::addressof(inplace_function_detail::empty_vtable<R, Args...>);
     }
 
-    inplace_function(std::nullptr_t) noexcept :
-        vtable_ptr_{std::addressof(inplace_function_detail::empty_vtable<R, Args...>)}
+    constexpr inplace_function(std::nullptr_t) noexcept :
+        vtable_ptr_{std::addressof(inplace_function_detail::empty_vtable<R, Args...>)}, storage_{}
     {}
 
     inplace_function(const inplace_function& other) :
@@ -224,14 +224,14 @@ public:
         );
     }
 
-    inplace_function& operator= (std::nullptr_t) noexcept
+    constexpr inplace_function& operator= (std::nullptr_t) noexcept
     {
         vtable_ptr_->destructor_ptr(std::addressof(storage_));
         vtable_ptr_ = std::addressof(inplace_function_detail::empty_vtable<R, Args...>);
         return *this;
     }
 
-    inplace_function& operator= (inplace_function other) noexcept
+    constexpr inplace_function& operator= (inplace_function other) noexcept
     {
         vtable_ptr_->destructor_ptr(std::addressof(storage_));
 
@@ -248,7 +248,7 @@ public:
         vtable_ptr_->destructor_ptr(std::addressof(storage_));
     }
 
-    R operator() (Args... args) const
+    constexpr R operator() (Args... args) const
     {
         return vtable_ptr_->invoke_ptr(
             std::addressof(storage_),
@@ -261,21 +261,16 @@ public:
         return !operator bool();
     }
 
-    constexpr bool operator!= (std::nullptr_t) const noexcept
-    {
-        return operator bool();
-    }
-
     explicit constexpr operator bool() const noexcept
     {
         return vtable_ptr_ != std::addressof(inplace_function_detail::empty_vtable<R, Args...>);
     }
 
-    void swap(inplace_function& other) noexcept
+    constexpr void swap(inplace_function& other) noexcept
     {
         if (this == std::addressof(other)) return;
 
-        storage_t tmp;
+        alignas(Alignment) std::byte tmp[Capacity];
         vtable_ptr_->relocate_ptr(
             std::addressof(tmp),
             std::addressof(storage_)
@@ -294,14 +289,14 @@ public:
         std::swap(vtable_ptr_, other.vtable_ptr_);
     }
 
-    friend void swap(inplace_function& lhs, inplace_function& rhs) noexcept
+    friend constexpr void swap(inplace_function& lhs, inplace_function& rhs) noexcept
     {
         lhs.swap(rhs);
     }
 
 private:
     vtable_ptr_t vtable_ptr_;
-    mutable storage_t storage_;
+    alignas(Alignment) mutable std::byte storage_[Capacity];
 
     inplace_function(
         vtable_ptr_t vtable_ptr,

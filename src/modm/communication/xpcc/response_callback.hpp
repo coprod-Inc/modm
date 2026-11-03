@@ -18,7 +18,7 @@
 #ifndef	XPCC_RESPONSE_CALLBACK_HPP
 #define	XPCC_RESPONSE_CALLBACK_HPP
 
-#include <modm/container/smart_pointer.hpp>
+#include <modm/communication/xpcc/smart_pointer.hpp>
 
 #include "backend/backend_interface.hpp"
 #include "communicatable.hpp"
@@ -39,7 +39,7 @@ namespace xpcc
 		typedef void (Communicatable::*Function)(const Header& header, const uint8_t *type);
 
 	public:
-		ResponseCallback() : component(nullptr), function(nullptr) {}
+		constexpr ResponseCallback() : component(nullptr), function(nullptr) {}
 
 		/**
 		 * Set the method that will be called when a response is received.
@@ -48,7 +48,7 @@ namespace xpcc
 		 * \param	memberFunction	Pointer to a function of the component object
 		 */
 		template <typename C, typename P>
-		ResponseCallback(C *componentObject, void (C::*memberFunction)(const Header& header, const P* packet)) :
+		constexpr ResponseCallback(C *componentObject, void (C::*memberFunction)(const Header& header, const P* packet)) :
 			component(reinterpret_cast<Communicatable *>(componentObject)),
 			function(reinterpret_cast<Function>(memberFunction))/*,
 			packetSize(sizeof(P))*/
@@ -65,7 +65,7 @@ namespace xpcc
 		 * \param	memberFunction	Pointer to a function of the component object
 		 */
 		template <typename C>
-		ResponseCallback(C *componentObject, void (C::*memberFunction)(const Header& header)) :
+		constexpr ResponseCallback(C *componentObject, void (C::*memberFunction)(const Header& header)) :
 			component(reinterpret_cast<Communicatable *>(componentObject)),
 			function(reinterpret_cast<Function>(memberFunction))/*,
 			packetSize(0)*/
@@ -80,7 +80,7 @@ namespace xpcc
 
 		/// \todo check packet size?
 		inline void
-		call(const Header& header, const modm::SmartPointer &payload) const
+		call(const Header& header, const xpcc::SmartPointer &payload) const
 		{
 			if (isCallable()) {
 				(component->*function)(header, payload.getPointer());

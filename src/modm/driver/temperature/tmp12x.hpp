@@ -13,7 +13,7 @@
 #define MODM_TMP12x_HPP
 
 #include <modm/architecture/interface/spi_device.hpp>
-#include <modm/processing/fiber.hpp>
+#include <modm/architecture/interface/fiber.hpp>
 #include <array>
 #include <ratio>
 
@@ -105,7 +105,7 @@ class Tmp12x : public modm::SpiDevice<SpiMaster>
 public:
 	using Temperature = TemperatureT;
 
-	Tmp12x()
+	constexpr Tmp12x()
 	{
 		this->attachConfigurationHandler([]
 		{

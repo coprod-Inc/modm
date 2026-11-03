@@ -14,7 +14,7 @@
 #ifndef MODM_MAX31855_HPP
 #define MODM_MAX31855_HPP
 
-#include <modm/processing/fiber.hpp>
+#include <modm/architecture/interface/fiber.hpp>
 #include <modm/architecture/interface/spi_device.hpp>
 
 namespace modm
@@ -77,7 +77,7 @@ public:
     /**
      * @param data pointer to buffer of the internal data of type Data
      */
-    Max31855(Data &data);
+    constexpr Max31855(Data &data);
 
     /// Call this function once before using the device
     void

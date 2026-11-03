@@ -13,7 +13,7 @@
 
 #include <modm/architecture/interface/register.hpp>
 #include <modm/architecture/interface/i2c_device.hpp>
-#include <modm/processing/fiber.hpp>
+#include <modm/architecture/interface/fiber.hpp>
 #include <modm/math/geometry/vector3.hpp>
 #include <modm/math/geometry/quaternion.hpp>
 
@@ -590,7 +590,7 @@ class Bno055 : public bno055, public modm::I2cDevice<I2cMaster>
 {
 public:
 	/// Constructor, requires a bno055::Data object.
-	inline Bno055(Data &data, uint8_t address=addr()):
+	constexpr Bno055(Data &data, uint8_t address=addr()):
 		I2cDevice<I2cMaster>(address), data(data) {}
 
 	inline bool

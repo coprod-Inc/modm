@@ -72,19 +72,24 @@ Rcc::setFlashLatency()
 %% elif target.family in ["l1"]
 	// enable 64-bit access, must be enabled *before* prefetch and latency!
 	FLASH->ACR |= FLASH_ACR_ACC64;
-	// enable flash prefetch
-	acr |= FLASH_ACR_PRFTEN;
+	// keep 64-bit access and enable flash prefetch
+	acr |= FLASH_ACR_ACC64 | FLASH_ACR_PRFTEN;
 %% elif target.family == "l0"
 	// enable flash prefetch and pre-read
 	acr |= FLASH_ACR_PRFTEN | FLASH_ACR_PRE_READ;
 %% elif target.family in ["u3", "u5"]
 	// enable flash prefetch
 	acr |= FLASH_ACR_PRFTEN;
+%% elif target.family == "h7" and target.name[0] in ["r", "s"]
+	// programming delay: 0-1 WS: 0, 2-3 WS: 1, 4-5 WS: 2, 6-7 WS: 3
+	acr = (acr & ~FLASH_ACR_WRHIGHFREQ) | ((fl.latency / 2) << FLASH_ACR_WRHIGHFREQ_Pos);
 %% elif target.family not in ["h7", "l5", "h5"]
 	// enable flash prefetch
 	acr |= FLASH_ACR_PRFTBE;
 %% endif
 	FLASH->ACR = acr;
+	// wait until the new latency is used before changing the clock
+	while ((FLASH->ACR & FLASH_ACR_LATENCY) != fl.latency) ;
 	__DSB(); __ISB();
 %% endif
 

@@ -12,7 +12,7 @@
 #define MODM_ILI9341_HPP
 
 #include <modm/architecture/utils.hpp>
-#include <modm/processing/fiber.hpp>
+#include <modm/architecture/interface/fiber.hpp>
 #include <modm/architecture/interface/register.hpp>
 #include <modm/math/utils/endianness.hpp>
 #include <modm/platform/gpio/base.hpp>
@@ -153,7 +153,7 @@ public:
 	using DisplayMode = ili9341::DisplayMode;
 
 	template<typename... Args>
-	Ili9341(Args&&... args): Interface(std::forward<Args>(args)...)
+	constexpr Ili9341(Args&&... args): Interface(std::forward<Args>(args)...)
 	{
 		Reset::setOutput(modm::Gpio::High);
 		Backlight::setOutput(modm::Gpio::Low);

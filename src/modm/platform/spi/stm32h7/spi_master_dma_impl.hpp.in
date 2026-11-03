@@ -134,8 +134,7 @@ SpiMaster{{ id }}_Dma<DmaChannelRx, DmaChannelTx>::transfer(
 			}
 		}
 		if(tx) {
-			const auto flags = DmaChannelTx::getInterruptFlags();
-			if (flags & Flags::Error) {
+			if (const auto flags = DmaChannelTx::getInterruptFlags(); flags & Flags::Error) {
 				break;
 			}
 		}
@@ -162,7 +161,9 @@ SpiMaster{{ id }}_Dma<DmaChannelRx, DmaChannelTx>::finishTransfer()
 		Hal::StatusFlag::CrcError |
 		Hal::StatusFlag::TiFrameError |
 		Hal::StatusFlag::ModeFault |
+%% if target.family != "h5"
 		Hal::StatusFlag::Reload |
+%% endif
 		Hal::StatusFlag::Suspension
 	);
 }

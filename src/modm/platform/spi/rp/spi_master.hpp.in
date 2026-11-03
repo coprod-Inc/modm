@@ -15,7 +15,7 @@
 #include <modm/architecture/interface/assert.hpp>
 #include <modm/platform/gpio/connector.hpp>
 #include <modm/math/algorithm/prescaler.hpp>
-#include <modm/processing/fiber.hpp>
+#include <modm/architecture/interface/fiber.hpp>
 
 #include <hardware/structs/spi.h>
 
@@ -164,20 +164,6 @@ public:
 	setDataOrder(DataOrder order)
 	{
 		modm_assert(order == DataOrder::MsbFirst, "SPI DataOrder", "SPI hardware does not support alternate transmit order");
-	}
-
-	[[deprecated("Use transfer() instead!")]] // DEPRECATED: 2026q3
-	static uint8_t
-	transferBlocking(uint8_t data)
-	{
-		return transfer(data);
-	}
-
-	[[deprecated("Use transfer() instead!")]] // DEPRECATED: 2026q3
-	static void
-	transferBlocking(const uint8_t *tx, uint8_t *rx, std::size_t length)
-	{
-		transfer(tx, rx, length);
 	}
 
 	static uint8_t

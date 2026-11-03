@@ -17,7 +17,7 @@
 #include <numbers>
 #include <modm/architecture/interface/register.hpp>
 #include <modm/architecture/interface/spi_device.hpp>
-#include <modm/processing/fiber.hpp>
+#include <modm/architecture/interface/fiber.hpp>
 #include <modm/math/geometry/angle_int.hpp>
 
 namespace modm
@@ -99,7 +99,7 @@ public:
 	/**
 	 * @param data pointer to buffer of the internal data of type Data
 	 */
-	As5047(Data &data);
+	constexpr As5047(Data &data);
 
 	/// Read the raw data from the sensor
 	void

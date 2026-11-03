@@ -16,7 +16,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
-#include <modm/processing/fiber.hpp>
+#include <modm/architecture/interface/fiber.hpp>
 #include <modm/architecture/interface/delay.hpp>
 #include <modm/architecture/interface/i2c_device.hpp>
 #include <modm/architecture/interface/spi_device.hpp>
@@ -191,7 +191,7 @@ template<typename I2cMaster>
 class Bmi088I2cTransport : public Bmi088TransportBase, public I2cDevice<I2cMaster>
 {
 public:
-	Bmi088I2cTransport(uint8_t accAddress, uint8_t gyroAddress);
+	constexpr Bmi088I2cTransport(uint8_t accAddress, uint8_t gyroAddress);
 
 	Bmi088I2cTransport(const Bmi088I2cTransport&) = delete;
 

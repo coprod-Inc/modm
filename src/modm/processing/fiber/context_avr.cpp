@@ -10,6 +10,7 @@
 // ----------------------------------------------------------------------------
 
 #include "context.h"
+#include <utility>
 #include <avr/io.h>
 
 /* Stack layout (growing downwards):
@@ -162,11 +163,11 @@ modm_context_start(modm_context_t *to)
 	return modm_context_jump_entry((modm_context_t*)&main_context_sp, to);
 }
 
-void
+void modm_used
 modm_context_end(uintptr_t retval)
 {
 	modm_context_jump_return(retval, (modm_context_t*)&main_context_sp);
-	__builtin_unreachable();
+	std::unreachable();
 }
 
 #define MODM_PUSH_CONTEXT() \

@@ -46,7 +46,9 @@ public:
 		CrcError 				= SPI_IER_CRCEIE,
 		TiFrameError			= SPI_IER_TIFREIE,
 		ModeFault				= SPI_IER_MODFIE,
+#ifdef SPI_IER_TSERFIE
 		Reload					= SPI_IER_TSERFIE
+#endif
 	};
 	MODM_FLAGS32(Interrupt);
 
@@ -63,7 +65,9 @@ public:
 		CrcError 				= SPI_SR_CRCE,
 		TiFrameError			= SPI_SR_TIFRE,
 		ModeFault				= SPI_SR_MODF,
+#ifdef SPI_SR_TSERF
 		Reload					= SPI_SR_TSERF,
+#endif
 		Suspension				= SPI_SR_SUSP,
 		TxTransferComplete		= SPI_SR_TXC,
 		RxFifoLevel1			= SPI_SR_RXPLVL_1,
@@ -189,8 +193,7 @@ constexpr auto
 operator<=>(SpiBase::DataSize s0, SpiBase::DataSize s1)
 {
     const auto v0 = static_cast<uint32_t>(s0);
-    const auto v1 = static_cast<uint32_t>(s1);
-    if (v0 < v1) {
+    if (const auto v1 = static_cast<uint32_t>(s1); v0 < v1) {
         return std::strong_ordering::less;
     } else if (v0 > v1) {
         return std::strong_ordering::greater;

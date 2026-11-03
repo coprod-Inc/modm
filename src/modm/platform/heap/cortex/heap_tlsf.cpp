@@ -85,7 +85,7 @@ get_tlsf_for_ptr(void *p)
 	}
 	modm_assert_continue_fail_debug(0, "tlsf.pool",
 			"Cannot find the right TLSF pool for pointer!", p);
-	return NULL;
+	return nullptr;
 }
 
 extern void __malloc_lock(struct _reent *);
@@ -115,36 +115,35 @@ try_again:
 		goto try_again;
 	}
 	// set the SBus and try again
-	const uint32_t set_mask = uint32_t(modm::MemoryTrait::AccessSBus);
-	if (!(traits & set_mask)) {
+	if (const uint32_t set_mask = uint32_t(modm::MemoryTrait::AccessSBus); !(traits & set_mask)) {
 		traits |= set_mask;
 		goto try_again;
 	}
 	// there is no memory left even after fallback.
 	modm_assert_continue_fail_debug(0, "malloc",
 			"No memory left in any TLSF pools!", size);
-	return NULL;
+	return nullptr;
 }
 
-void *__wrap__malloc_r(struct _reent *, size_t size)
+void *modm_used __wrap__malloc_r(struct _reent *, size_t size)
 {
 	// default is accessible by S-Bus and DMA-able
 	return malloc_traits(size, uint32_t(modm::MemoryTrait::AccessSBus) |
 							   uint32_t(modm::MemoryTrait::AccessDMA));
 }
 
-void *__wrap__calloc_r(struct _reent *r, size_t size)
+void *modm_used __wrap__calloc_r(struct _reent *r, size_t size)
 {
 	void *ptr = __wrap__malloc_r(r, size);
 	if (ptr) memset(ptr, 0, size);
 	return ptr;
 }
 
-void *__wrap__realloc_r(struct _reent *r, void *p, size_t size)
+void *modm_used __wrap__realloc_r(struct _reent *r, void *p, size_t size)
 {
 	if (!p) return __wrap__malloc_r(r, size);
 
-	void *ptr = NULL;
+	void *ptr = nullptr;
 
 	__malloc_lock(r);
 	const tlsf_t pool = get_tlsf_for_ptr(p);
@@ -156,7 +155,7 @@ void *__wrap__realloc_r(struct _reent *r, void *p, size_t size)
 	return ptr;
 }
 
-void __wrap__free_r(struct _reent *r, void *p)
+void modm_used __wrap__free_r(struct _reent *r, void *p)
 {
 	// do nothing if NULL pointer
 	if (!p) return;

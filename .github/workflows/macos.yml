@@ -23,14 +23,16 @@ jobs:
           export HOMEBREW_NO_INSTALL_CLEANUP=1 # saves time
           brew update
           # brew unlink gcc
-          brew install doxygen boost gcc@14 avr-gcc@14 arm-gcc-bin@14 || true
-          brew link --force avr-gcc@14 arm-gcc-bin@14
+          brew install doxygen boost gcc@15 avr-gcc@15 arm-gcc-bin@15 || true
+          brew link --force avr-gcc@15 arm-gcc-bin@15
           # brew upgrade boost gcc git cmake || true
 
       - name: Setup environment - Python pip
         run: |
-          pip3 install --upgrade --upgrade-strategy=eager --break-system-packages modm scons
           echo "/usr/local/bin" >> $GITHUB_PATH
+          # The following steps run the python3 in /usr/local/bin, which is a different install
+          # than the brew pip3: the build tools (modm_tools, nanopb) need their packages there.
+          /usr/local/bin/python3 -m pip install --upgrade --break-system-packages modm lbuild scons protobuf grpcio-tools
 
       - name: Dump environment
         run: |
@@ -65,20 +67,19 @@ jobs:
       - name: Hosted Examples
         if: always()
         run: |
-          (cd examples/linux && ../../tools/scripts/examples_compile.py block_device assert build_info fiber git logger printf threads)
+          (cd examples && ../tools/scripts/examples_compile.py core/assert ../test/integration/block_device core/build_info logging/logger logging/printf core/fiber core/threads --target '^hosted')
 
       - name: Compile STM32 Examples
         if: always()
         run: |
-          (cd examples && ../tools/scripts/examples_compile.py nucleo_f031k6 nucleo_f103rb nucleo_f303re nucleo_f411re nucleo_f746zg)
-          (cd examples && ../tools/scripts/examples_compile.py nucleo_g071rb nucleo_l031k6 nucleo_l152re nucleo_l476rg nucleo_g474re)
+          (cd examples && ../tools/scripts/examples_compile.py . --target '^stm32' --split 16 --part 0)
 
       - name: Compile AVR Examples
         if: always()
         run: |
-          (cd examples && ../tools/scripts/examples_compile.py avr)
+          (cd examples && ../tools/scripts/examples_compile.py . --target '^at' --split 4 --part 0)
 
       - name: Compile NRF Examples
         if: always()
         run: |
-          (cd examples && ../tools/scripts/examples_compile.py nrf51422-dk nrf52840-dk nrf5340-dk)
+          (cd examples && ../tools/scripts/examples_compile.py . --target '^nrf')

@@ -16,10 +16,15 @@
 
 #include "linear_interpolation_test.hpp"
 
+static_assert([]{
+	std::pair<int16_t, uint16_t> points[2] = {{-10, 50}, {50, 10}};
+	return modm::interpolation::Linear<std::pair<int16_t, uint16_t>>(points, 2).interpolate(20);
+}() == 30);
+
 void
 LinearInterpolationTest::testInterpolationRam()
 {
-	typedef modm::Pair<int16_t, uint16_t> Point;
+	typedef std::pair<int16_t, uint16_t> Point;
 
 	Point points[3] =
 	{
@@ -37,7 +42,7 @@ LinearInterpolationTest::testInterpolationRam()
 	TEST_ASSERT_EQUALS(value.interpolate(150),  0U);
 }
 
-typedef modm::Pair<uint8_t, int16_t> MyPair;
+typedef std::pair<uint8_t, int16_t> MyPair;
 
 FLASH_STORAGE(MyPair flashValues[6]) =
 {

@@ -40,7 +40,7 @@ namespace modm
 	class Scheduler
 	{
 	public:
-		typedef uint8_t Priority;
+		using Priority = uint8_t;
 
 		/**
 		 * \brief	Scheduler task
@@ -53,7 +53,7 @@ namespace modm
 		};
 
 	public:
-		Scheduler();
+		constexpr Scheduler() = default;
 
 		void
 		scheduleTask(Task& task,
@@ -73,7 +73,7 @@ namespace modm
 	private:
 		struct TaskListItem
 		{
-			TaskListItem(Task& task,
+			constexpr TaskListItem(Task& task,
 						 uint16_t period,
 						 Priority priority) :
 				nextTask(0), nextReady(0), task(task),
@@ -98,10 +98,10 @@ namespace modm
 			/// @endcond
 		};
 
-		TaskListItem *taskList;
-		TaskListItem *readyList;
+		TaskListItem *taskList{nullptr};
+		TaskListItem *readyList{nullptr};
 
-		Priority currentPriority;
+		Priority currentPriority{0};
 	};
 }
 

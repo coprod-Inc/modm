@@ -19,17 +19,19 @@
 
 #include <modm/architecture/utils.hpp>
 
+#ifdef MODM_CPU_AVR
 extern "C" uint16_t modm__sqrt32(uint32_t a);
+#endif
 
 namespace modm
 {
 	namespace math
 	{
 		/**
-		 * \brief	Fast AVR integer square root assembly routines
+		 * \brief	Integer square root rounded to the nearest integer
 		 *
-		 * Square root calculation based on a implementation by Ruud v Gessel.
-		 * The maximum execution time is 310 clock cycles (inclusive CALL+RET)
+		 * On AVR, the runtime uses the assembly implementation by Ruud v Gessel,
+		 * which takes at most 310 clock cycles (inclusive CALL+RET).
 		 *
 		 * \see		<a href="http://www.mikrocontroller.net/articles/AVR_Arithmetik#avr-gcc_Implementierung_.2832_Bit.29" target="_blank">
 		 * 			Article on microcontroller.net</a>
@@ -38,28 +40,43 @@ namespace modm
 		 *
 		 * \ingroup	modm_math_utils
 		 */
-		inline uint16_t
+		constexpr uint16_t
 		sqrt(uint32_t a)
 		{
-			return modm__sqrt32(a);
+#ifdef MODM_CPU_AVR
+			if !consteval { return modm__sqrt32(a); }
+#endif
+			// Digit-by-digit square root: root = floor(sqrt(a)), a = remainder
+			uint32_t root{0};
+			for (uint32_t bit = 1ul << 30; bit; bit >>= 2)
+			{
+				if (a >= root + bit) {
+					a -= root + bit;
+					root = (root >> 1) + bit;
+				}
+				else root >>= 1;
+			}
+			// Round up if a > (root + 0.5)^2 - root^2, saturating at the maximum
+			if (a > root and root < 0xffff) root++;
+			return root;
 		}
 
 		/**
 		 * \brief	unsigned 16bit x 16bit = 32bit multiplication
 		 *
-		 * \see		AVR201
 		 * \ingroup	modm_math_utils
 		 */
-		inline uint32_t
+		[[deprecated("use uint32_t(a) * b")]] // DEPRECATED: 2027q4
+		constexpr uint32_t
 		mul(uint16_t a, uint16_t b);
 
 		/**
 		 * \brief	signed 16bit x 16bit = 32bit multiplication
 		 *
-		 * \see		AVR201
 		 * \ingroup	modm_math_utils
 		 */
-		inline int32_t
+		[[deprecated("use int32_t(a) * b")]] // DEPRECATED: 2027q4
+		constexpr int32_t
 		mul(int16_t a, int16_t b);
 
 		/**
@@ -70,10 +87,10 @@ namespace modm
 		 * result += a * b;
 		 * \endcode
 		 *
-		 * \see		AVR201
 		 * \ingroup	modm_math_utils
 		 */
-		inline int32_t
+		[[deprecated("use result + int32_t(a) * b")]] // DEPRECATED: 2027q4
+		constexpr int32_t
 		mac(int32_t result, int16_t a, int16_t b);
 	}
 }

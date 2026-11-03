@@ -37,38 +37,38 @@ namespace modm
 	class Location2D
 	{
 	public:
-		Location2D();
+		constexpr Location2D();
 
-		Location2D(const Vector<T, 2>& position, const float& orientation);
+		constexpr Location2D(const Vector<T, 2>& position, const float& orientation);
 
-		Location2D(const T& x, const T& y, const float& orientation);
+		constexpr Location2D(const T& x, const T& y, const float& orientation);
 
-		inline const Vector<T, 2>&
+		constexpr const Vector<T, 2>&
 		getPosition() const;
 
-		inline const T&
+		constexpr const T&
 		getX() const;
 
-		inline const T&
+		constexpr const T&
 		getY() const;
 
-		void
+		constexpr void
 		setPosition(const Vector<T, 2>& point);
 
-		void
+		constexpr void
 		setPosition(const T& x, const T& y);
 
-		inline float
+		constexpr float
 		getOrientation() const;
 
-		void
+		constexpr void
 		setOrientation(const float& phi);
 
 		/// Add a position increment
-		void
+		constexpr void
 		move(const Location2D& diff);
 
-		void
+		constexpr void
 		move(const Vector<T, 2>& diff);
 
 		/**
@@ -90,22 +90,22 @@ namespace modm
 		 * \param	x		movement in x-direction
 		 * \param	phi		rotation
 		 */
-		void
+		constexpr void
 		move(T x, float phi);
 
 		/// TODO
-		Vector<T, 2>
+		constexpr Vector<T, 2>
 		translated(const Vector<T, 2>& vector) const;
 
 		/// Convert between Location-objects with different base-types
 		template <typename U>
-		Location2D<U>
+		constexpr Location2D<U>
 		convert() const;
 
-		bool
+		constexpr bool
 		operator == (const Location2D &other) const;
 
-		bool
+		constexpr bool
 		operator != (const Location2D &other) const;
 
 	private:

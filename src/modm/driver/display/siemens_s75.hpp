@@ -15,7 +15,7 @@
 #ifndef MODM_SIEMENS_S75_HPP
 #define MODM_SIEMENS_S75_HPP
 
-#include <modm/processing/fiber.hpp>
+#include <modm/architecture/interface/fiber.hpp>
 #include <modm/driver/bus/bitbang_memory_interface.hpp>
 #include <modm/ui/display/monochrome_graphic_display_vertical.hpp>
 
@@ -41,7 +41,7 @@ namespace modm
 			public MonochromeGraphicDisplayVertical<WIDTH, HEIGHT>
 	{
 	public:
-		SiemensS75Common(MEMORY& interface) :
+		constexpr SiemensS75Common(MEMORY& interface) :
 			interface(interface)
 		{
 		}
@@ -89,7 +89,7 @@ namespace modm
 		public SiemensS75Common<MEMORY, RESET, 176, 136, modm::Orientation::LandscapeLeft>
 	{
 	public:
-		explicit SiemensS75LandscapeLeft(MEMORY& interface) :
+		explicit constexpr SiemensS75LandscapeLeft(MEMORY& interface) :
 		SiemensS75Common<MEMORY, RESET, 176, 136, modm::Orientation::LandscapeLeft>(interface) { }
 	};
 
@@ -99,7 +99,7 @@ namespace modm
 		public SiemensS75Common<MEMORY, RESET, 176, 136, modm::Orientation::LandscapeRight>
 	{
 	public:
-		explicit SiemensS75LandscapeRight(MEMORY& interface) :
+		explicit constexpr SiemensS75LandscapeRight(MEMORY& interface) :
 		SiemensS75Common<MEMORY, RESET, 176, 136, modm::Orientation::LandscapeRight>(interface) { }
 	};
 }

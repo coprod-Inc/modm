@@ -27,10 +27,10 @@ namespace modm
 	 * @author	Fabian Greif
 	 * @ingroup	modm_ui_time
 	 */
-	class UnixTime
+	class [[deprecated("Use modm::DateTime instead")]] UnixTime // DEPRECATED: 2027q4
 	{
 	public:
-		UnixTime(uint32_t t) :
+		constexpr UnixTime(uint32_t t) :
 			time(t)
 		{
 		}
@@ -51,13 +51,15 @@ namespace modm
 		uint32_t time;
 	};
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 	/**
 	 * @brief	Calender Date and Time
 	 *
 	 * @author	Fabian Greif
 	 * @ingroup	modm_ui_time
 	 */
-	class Date
+	class [[deprecated("Use modm::DateTime instead")]] Date // DEPRECATED: 2027q4
 	{
 	public:
 		/**
@@ -77,6 +79,7 @@ namespace modm
 		uint8_t dayOfTheWeek;	///< Days since Sunday [0, 6] (0=Sunday, 6=Saturday)
 		uint8_t dayOfTheYear;	///< Days since January 1 [0, 365]
 	};
+#pragma GCC diagnostic pop
 }
 
 #endif	// MODM_TIME_HPP

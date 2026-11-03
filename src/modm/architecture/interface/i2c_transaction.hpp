@@ -42,7 +42,7 @@ public:
 		 * @param	address	the slave address excluding read/write bit
 		 * @param	next	operation following the successful addressing of the slave
 		 */
-		Starting(uint8_t address, OperationAfterStart next)
+		constexpr Starting(uint8_t address, OperationAfterStart next)
 		:	address(address), next(next)
 		{
 		}
@@ -60,7 +60,7 @@ public:
 		 * @param	length	number of bytes to be written
 		 * @param	next	operation following the successful writing to the slave
 		 */
-		Writing(const uint8_t *buffer, std::size_t length, OperationAfterWrite next)
+		constexpr Writing(const uint8_t *buffer, std::size_t length, OperationAfterWrite next)
 		:	buffer(buffer), length(buffer ? length : 0), next(next)
 		{
 		}
@@ -79,7 +79,7 @@ public:
 		 * @param	length	number of bytes to be read
 		 * @param	next	operation following the successful reading from the slave
 		 */
-		Reading(uint8_t *buffer, std::size_t length, OperationAfterRead next)
+		constexpr Reading(uint8_t *buffer, std::size_t length, OperationAfterRead next)
 		:	buffer(buffer), length(buffer ? length : 0), next(next)
 		{
 		}
@@ -91,7 +91,7 @@ public:
 
 public:
 	///	@param	address	the slave address not yet shifted left (address < 128).
-	I2cTransaction(uint8_t address) :
+	constexpr I2cTransaction(uint8_t address) :
 		address(address << 1), state(TransactionState::Idle)
 	{}
 
@@ -104,14 +104,14 @@ public:
 
 	/// @return `Busy` while an I2C operation is ongoing. Reinitialization
 	///			is not permitted during this phase.
-	TransactionState
+	constexpr TransactionState
 	getState() const
 	{
 		return state;
 	}
 
 	/// @return `true` while adapter is busy
-	bool
+	constexpr bool
 	isBusy() const
 	{
 		return (state == TransactionState::Busy);
@@ -123,7 +123,7 @@ public:
 	 * @retval `true` adapter configured successfully,
 	 * @retval `false` adapter busy
 	 */
-	bool
+	[[nodiscard]] bool
 	configurePing();
 
 	/**
@@ -137,7 +137,7 @@ public:
 	 * @retval `true` adapter configured successfully,
 	 * @retval `false` adapter busy
 	 */
-	bool
+	[[nodiscard]] bool
 	configureWriteRead(const uint8_t *writeBuffer, std::size_t writeSize,
 							 uint8_t *readBuffer,  std::size_t readSize);
 
@@ -150,7 +150,7 @@ public:
 	 * @retval `true` adapter configured successfully,
 	 * @retval `false` adapter busy
 	 */
-	bool
+	[[nodiscard]] bool
 	configureWrite(uint8_t *buffer, std::size_t size);
 
 	/**
@@ -162,7 +162,7 @@ public:
 	 * @retval `true` adapter configured successfully,
 	 * @retval `false` adapter busy
 	 */
-	bool
+	[[nodiscard]] bool
 	configureRead(uint8_t *buffer, std::size_t size);
 
 public:
@@ -241,19 +241,19 @@ protected:
 class I2cWriteReadTransaction : public I2cTransaction
 {
 public:
-	I2cWriteReadTransaction(uint8_t address) :
+	constexpr I2cWriteReadTransaction(uint8_t address) :
 		I2cTransaction(address), readSize(0), writeSize(0),
 		readBuffer(nullptr), writeBuffer(nullptr), isReading(false)
 	{
 	}
 
-	bool
+	[[nodiscard]] constexpr bool
 	configurePing()
 	{
 		return configureWriteRead(nullptr, 0, nullptr, 0);
 	}
 
-	bool inline
+	[[nodiscard]] bool inline
 	configureWriteRead(const uint8_t *writeBuffer, std::size_t writeSize,
 			uint8_t *readBuffer, std::size_t readSize)
 	{
@@ -304,7 +304,7 @@ public:
 	 * @return  `true` if adapter was not in use,
 	 *          `false` otherwise
 	 */
-	bool
+	[[nodiscard]] constexpr bool
 	configureWrite(const uint8_t *buffer, std::size_t size)
 	{
 		return configureWriteRead(buffer, size, nullptr, 0);
@@ -319,7 +319,7 @@ public:
 	 * @return  `true` if adapter was not in use,
 	 *          `false` otherwise
 	 */
-	bool
+	[[nodiscard]] constexpr bool
 	configureRead(uint8_t *buffer, std::size_t size)
 	{
 		return configureWriteRead(nullptr, 0, buffer, size);
@@ -409,24 +409,24 @@ protected:
 class I2cWriteTransaction : public I2cTransaction
 {
 public:
-	I2cWriteTransaction(uint8_t address)
+	constexpr I2cWriteTransaction(uint8_t address)
 	:	I2cTransaction(address), size(0), buffer(nullptr)
 	{
 	}
 
-	bool
+	[[nodiscard]] constexpr bool
 	configurePing()
 	{
 		return configureWrite(nullptr, 0);
 	}
 
-	bool
+	[[nodiscard]] constexpr bool
 	configureWriteRead(const uint8_t *, std::size_t, uint8_t *, std::size_t)
 	{
 		return false;
 	}
 
-	bool inline
+	[[nodiscard]] bool inline
 	configureWrite(const uint8_t *buffer, std::size_t size)
 	{
 		if (state != TransactionState::Busy)
@@ -438,7 +438,7 @@ public:
 		return false;
 	}
 
-	bool
+	[[nodiscard]] constexpr bool
 	configureRead(uint8_t *, std::size_t)
 	{
 		return false;
@@ -484,30 +484,30 @@ protected:
 class I2cReadTransaction : public I2cTransaction
 {
 public:
-	I2cReadTransaction(uint8_t address)
+	constexpr I2cReadTransaction(uint8_t address)
 	:	I2cTransaction(address), size(0), buffer(nullptr)
 	{
 	}
 
-	bool
+	[[nodiscard]] constexpr bool
 	configurePing()
 	{
 		return configureRead(nullptr, 0);
 	}
 
-	bool
+	[[nodiscard]] constexpr bool
 	configureWriteRead(const uint8_t *, std::size_t, uint8_t *, std::size_t)
 	{
 		return false;
 	}
 
-	bool
+	[[nodiscard]] constexpr bool
 	configureWrite(uint8_t *, std::size_t)
 	{
 		return false;
 	}
 
-	bool inline
+	[[nodiscard]] bool inline
 	configureRead(uint8_t *buffer, std::size_t size)
 	{
 		if (state != TransactionState::Busy)

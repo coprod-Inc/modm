@@ -17,7 +17,7 @@
 #include <modm/architecture/interface/gpio.hpp>
 #include <modm/architecture/interface/i2c_device.hpp>
 #include <modm/architecture/interface/spi_device.hpp>
-#include <modm/processing/fiber.hpp>
+#include <modm/architecture/interface/fiber.hpp>
 
 namespace modm
 {
@@ -54,7 +54,7 @@ public:
 	 * Constructor
 	 * @param address I2C address (0x46 with SDO to GND, 0x47 with SDO to VDDIO)
 	 */
-	Bmp581I2cTransport(uint8_t address = 0x46);
+	constexpr Bmp581I2cTransport(uint8_t address = 0x46);
 
 	/// Initialize the transport layer
 	bool
@@ -93,7 +93,7 @@ public:
 	/**
 	 * Constructor
 	 */
-	Bmp581SpiTransport();
+	constexpr Bmp581SpiTransport();
 
 	/// Initialize the transport layer (configures CS pin)
 	bool

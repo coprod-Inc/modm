@@ -58,9 +58,11 @@ def prepare(module, options):
     module.depends(
         ":architecture:accessor",
         ":architecture:atomic",
+        ":architecture:delay",
         ":architecture:i2c",
         ":architecture:interrupt",
         ":math:algorithm",
+        ":math:utils",
         ":cmsis:device",
         ":container",
         ":platform:gpio")

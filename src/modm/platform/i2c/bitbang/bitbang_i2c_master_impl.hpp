@@ -18,7 +18,7 @@
 #ifndef MODM_SOFTWARE_BITBANG_I2C_HPP
 #	error	"Don't include this file directly, use 'bitbang_i2c_master.hpp' instead!"
 #endif
-#include <modm/processing/fiber.hpp>
+#include <modm/architecture/interface/fiber.hpp>
 
 // debugging for serious dummies
 /*
@@ -31,8 +31,6 @@
 template <class Scl, class Sda>
 uint16_t modm::platform::BitBangI2cMaster<Scl, Sda>::delayTime(3);
 
-template <class Scl, class Sda>
-modm::I2c::Operation modm::platform::BitBangI2cMaster<Scl, Sda>::nextOperation;
 template <class Scl, class Sda>
 modm::I2cTransaction *modm::platform::BitBangI2cMaster<Scl, Sda>::transactionObject(nullptr);
 template <class Scl, class Sda>
@@ -76,7 +74,8 @@ modm::platform::BitBangI2cMaster<Scl, Sda>::connect(PullUps pullups, ResetDevice
 	SDA::configure(input);
 	SCL::setOutput(SCL::OutputType::OpenDrain);
 	SDA::setOutput(SDA::OutputType::OpenDrain);
-	if (reset != ResetDevices::NoReset) resetDevices<SCL>(uint32_t(reset));
+	busReset = reset;
+	clearBus();
 	Connector::connect();
 }
 
@@ -184,6 +183,17 @@ modm::platform::BitBangI2cMaster<Scl, Sda>::reset()
 	errorState = Error::SoftwareReset;
 	if (transactionObject) transactionObject->detaching(DetachCause::ErrorCondition);
 	transactionObject = nullptr;
+	SCL::set();
+	SDA::set();
+	clearBus();
+}
+
+template <class Scl, class Sda>
+bool
+modm::platform::BitBangI2cMaster<Scl, Sda>::clearBus()
+{
+	if (busReset != ResetDevices::NoReset) resetDevices<SCL, SDA>(uint32_t(busReset));
+	return SCL::read() and SDA::read();
 }
 
 // ----------------------------------------------------------------------------
@@ -198,8 +208,11 @@ modm::platform::BitBangI2cMaster<Scl, Sda>::error(Error error)
 	SCL::reset();
 	SDA::reset();
 	delay2();
-	// attempt a stop condition, if it fails there is nothing else we can do
+	// attempt a stop condition, if it fails a device holds the bus
 	if (not stopCondition()) {
+		SCL::set();
+		SDA::set();
+		clearBus();
 		errorState = error;
 		return;
 	}
@@ -227,7 +240,9 @@ modm::platform::BitBangI2cMaster<Scl, Sda>::startCondition()
 	delay4();
 	if(SDA::read() == modm::Gpio::Low)
 	{
-		// could not release data line
+		// could not release data line, a device may still hold it
+		SCL::set();
+		clearBus();
 		errorState = Error::BusBusy;
 		if (transactionObject) transactionObject->detaching(DetachCause::ErrorCondition);
 		transactionObject = nullptr;
@@ -237,6 +252,7 @@ modm::platform::BitBangI2cMaster<Scl, Sda>::startCondition()
 	if (not sclSetAndWait())
 	{
 		// could not release clock line
+		clearBus();
 		errorState = Error::BusBusy;
 		if (transactionObject) transactionObject->detaching(DetachCause::ErrorCondition);
 		transactionObject = nullptr;
@@ -294,19 +310,17 @@ bool
 modm::platform::BitBangI2cMaster<Scl, Sda>::sclSetAndWait()
 {
 	SCL::set();
-	// wait for clock stretching by slave
-	// only wait a maximum of 250 half clock cycles
-	uint_fast8_t deadlockPreventer = 250;
-	while (SCL::read() == modm::Gpio::Low && deadlockPreventer)
+	// short clock stretching is busy waited for about 1 ms, since switching
+	// fibers may take a long time and draw out the transaction
+	for (uint32_t ii = 500'000ul / delayTime; ii; ii--)
 	{
+		// the pull-up needs a moment to raise SCL after it was released
 		delay4();
-		deadlockPreventer--;
-		// double the read amount
 		if (SCL::read() == modm::Gpio::High) return true;
 		delay4();
 	}
-	// if extreme clock stretching occurs, then there might be an external error
-	return deadlockPreventer > 0;
+	// long clock stretching yields until the timeout
+	return modm::this_fiber::poll_for(stretchTimeout, []{ return SCL::read() == modm::Gpio::High; });
 }
 
 // ----------------------------------------------------------------------------
@@ -375,9 +389,8 @@ modm::platform::BitBangI2cMaster<Scl, Sda>::read(uint8_t &data, bool ack)
 		data <<= 1;
 		if (not readBit(data))
 		{
-			// slaves don't stretch the clock here
-			// this must be arbitration.
-			error(Error::ArbitrationLost);
+			// slaves don't stretch the clock here, so SDA changed while SCL was high
+			error(Error::BusCondition);
 			return false;
 		}
 	}
@@ -409,10 +422,11 @@ modm::platform::BitBangI2cMaster<Scl, Sda>::writeBit(bool bit)
 	if ((SDA::read() == bit) && sclSetAndWait())
 	{
 		delay2();
+		// another master or a glitch changed a line while SCL was high
+		const bool stable = (SDA::read() == bit) and SCL::read();
 		// falling clock edge
 		SCL::reset();
-		// everything ok
-		return true;
+		return stable;
 	}
 	// too much clock stretching
 	return false;
@@ -428,13 +442,16 @@ modm::platform::BitBangI2cMaster<Scl, Sda>::readBit(uint8_t &data)
 	if (sclSetAndWait())
 	{
 		// copy bit into data
-		if(SDA::read() == modm::Gpio::High)
-			data |= 0x01;
+		const bool bit = SDA::read();
+		if (bit) data |= 0x01;
 
 		delay2();
+		// a change while SCL is high is a misplaced start or stop condition,
+		// a low SCL a glitch that clocked the device
+		const bool stable = (SDA::read() == bit) and SCL::read();
 		// falling clock edge
 		SCL::reset();
-		return true;
+		return stable;
 	}
 	// too much clock stretching
 	return false;

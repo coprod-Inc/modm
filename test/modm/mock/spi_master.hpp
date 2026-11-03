@@ -13,7 +13,8 @@
 #define MODM_TEST_MOCK_SPI_MASTER_HPP
 
 #include <modm/architecture/interface/spi_master.hpp>
-#include <modm/container/doubly_linked_list.hpp>
+#include <algorithm>
+#include <vector>
 
 namespace modm_test
 {
@@ -39,7 +40,7 @@ private:
 	static inline DataOrder dataOrder{DataOrder::MsbFirst};
 
 public:
-	using ArrayContainer = modm::DoublyLinkedList<uint8_t>;
+	using ArrayContainer = std::vector<uint8_t>;
 
 private:
 	static inline ArrayContainer rxBuffer;
@@ -73,21 +74,6 @@ public:
 	release(void *ctx);
 
 
-	[[deprecated("Use transfer() instead!")]] // DEPRECATED: 2026q3
-	static uint8_t
-	transferBlocking(uint8_t data)
-	{
-		return transfer(data);
-	}
-
-	[[deprecated("Use transfer() instead!")]] // DEPRECATED: 2026q3
-	static void
-	transferBlocking(uint8_t *tx, uint8_t *rx, std::size_t length)
-	{
-		transfer(tx, rx, length);
-	}
-
-
 	static uint8_t
 	transfer(uint8_t data);
 
@@ -96,35 +82,26 @@ public:
 
 public:
 	static std::size_t getTxBufferLength() {
-		return txBuffer.getSize();
+		return txBuffer.size();
 	}
 
 	static void popTxBuffer(uint8_t* buf)
 	{
-		std::size_t j = 0;
-		for(ArrayContainer::iterator i = txBuffer.begin(); i != txBuffer.end(); ++i) {
-			buf[j++] = (*i);
-		}
-		while(txBuffer.getSize() > 0) {
-			txBuffer.removeFront();
-		}
+		std::ranges::copy(txBuffer, buf);
+		txBuffer.clear();
 	}
 
 	static void appendRxBuffer(uint8_t* data, std::size_t length)
 	{
 		for(std::size_t i = 0; i < length; ++i) {
-			rxBuffer.append(data[i]);
+			rxBuffer.push_back(data[i]);
 		}
 	}
 
 	static void clearBuffers()
 	{
-		while(txBuffer.getSize() > 0) {
-			txBuffer.removeFront();
-		}
-		while(rxBuffer.getSize() > 0) {
-			rxBuffer.removeFront();
-		}
+		txBuffer.clear();
+		rxBuffer.clear();
 	}
 };
 

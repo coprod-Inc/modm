@@ -15,8 +15,8 @@
 #define TIMELINE_HPP
 
 #include <modm/communication/xpcc.hpp>
-#include <modm/container/linked_list.hpp>
-#include <modm/container/smart_pointer.hpp>
+#include <list>
+#include <modm/communication/xpcc/smart_pointer.hpp>
 
 /// @ingroup modm_test_test_communication_xpcc
 class Timeline
@@ -44,14 +44,14 @@ public:
 		uint8_t id;
 		uint8_t source;
 
-		modm::SmartPointer payload;
+		xpcc::SmartPointer payload;
 
 	private:
 		Event&
 		operator = (const Event& other);
 	};
 
-	modm::LinkedList<Event> events;
+	std::list<Event> events;
 };
 
 template <typename T>

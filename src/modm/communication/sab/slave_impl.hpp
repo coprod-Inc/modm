@@ -26,10 +26,10 @@ modm::sab::Response::send(const T& payload)
 
 // ----------------------------------------------------------------------------
 inline void
-modm::sab::Action::call(Response& response, const void *payload)
+modm::sab::Action::call(Response& response, const void *payload) const
 {
 	// redirect call to the actual object
-	(object->*function)(response, payload);
+	function(object, response, payload);
 }
 
 // Disable warnings for Visual Studio about using 'this' in a base member
@@ -41,8 +41,8 @@ modm::sab::Action::call(Response& response, const void *payload)
 
 // ----------------------------------------------------------------------------
 template <typename Interface>
-modm::sab::Slave<Interface>::Slave(uint8_t address,
-		modm::accessor::Flash<Action> list,
+constexpr modm::sab::Slave<Interface>::Slave(uint8_t address,
+		const Action *list,
 		uint8_t count) :
 	ownAddress(address), actionList(list), actionCount(count),
 	response(this)
@@ -64,10 +64,10 @@ modm::sab::Slave<Interface>::update()
 			this->response.triggered = false;
 			this->currentCommand = Interface::getCommand();
 
-			modm::accessor::Flash<Action> list = actionList;
+			const Action *list = actionList;
 			for (uint_fast8_t i = 0; i < actionCount; ++i, ++list)
 			{
-				Action action(*list);
+				const Action &action = *list;
 				if (this->currentCommand == action.command)
 				{
 					if (Interface::getPayloadLength() == action.payloadLength)

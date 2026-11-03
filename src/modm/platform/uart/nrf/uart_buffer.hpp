@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include <modm/architecture/driver/atomic/queue.hpp>
+#include <modm/architecture/interface/atomic_queue.hpp>
 #include <modm/architecture/interface/uart.hpp>
 #include "uart_base.hpp"
 
@@ -34,7 +34,7 @@ class BufferedUart<Hal, UartTxBuffer<SIZE>, Buffers...>: public BufferedUart<Hal
 	static_assert(not Parent::TxBufferSize, "BufferedUart accepts at most one TxBuffer type");
 	static inline UartTxBuffer<SIZE> txBuffer;
 	static inline uint8_t txBurstBuffer[SIZE];
-	static inline std::size_t txBurstLength = 0;
+	static inline volatile std::size_t txBurstLength = 0;
 
 	static inline void
 	serviceTxBurst()

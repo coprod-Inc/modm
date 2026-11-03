@@ -15,6 +15,7 @@
 #define MODM_FIBER_SCHEDULER_HPP
 
 #include "task.hpp"
+#include <utility>
 #include <modm/architecture/interface/assert.hpp>
 %% if multicore
 #include <modm/platform/core/multicore.hpp>
@@ -119,7 +120,9 @@ protected:
 	void inline
 	yield()
 	{
-		if (current == nullptr) return;
+		// An interrupt cannot switch to another fiber, so it busy-waits instead,
+		// for example when a fault handler logs and flushes a buffered UART
+		if (current == nullptr or isInsideInterrupt()) return;
 		Task* next = current->next;
 		// If there's only one fiber running, we could just return here.
 		// However, we need to check the stack for overflow.
@@ -141,7 +144,7 @@ protected:
 			modm_context_end(0);
 		}
 		jump(next);
-		__builtin_unreachable();
+		std::unreachable();
 	}
 
 	void inline
