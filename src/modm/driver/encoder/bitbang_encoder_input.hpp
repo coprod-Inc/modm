@@ -14,7 +14,7 @@
 
 #include <bit>
 #include <modm/platform.hpp>
-#include <modm/processing/fiber.hpp>
+#include <modm/architecture/interface/fiber.hpp>
 #include <type_traits>
 
 namespace modm
@@ -49,7 +49,7 @@ class BitBangEncoderInput
 	uint8_t inline getRaw();
 
 public:
-	BitBangEncoderInput() : raw_last(0), delta(0){};
+	constexpr BitBangEncoderInput() : raw_last(0), delta(0){};
 
 	using InputType = modm::platform::Gpio::InputType;
 	// Connect SingalA and SignalB and store power-up state

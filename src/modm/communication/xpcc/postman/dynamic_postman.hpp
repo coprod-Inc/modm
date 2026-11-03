@@ -45,7 +45,7 @@ public:
 	DynamicPostman();
 
 	DeliverInfo
-	deliverPacket(const Header &header, const modm::SmartPointer& payload) override;
+	deliverPacket(const Header &header, const xpcc::SmartPointer& payload) override;
 
 	bool
 	isComponentAvailable(uint8_t component) const override;
@@ -89,7 +89,7 @@ private:
 		EventListener(EventCallback call);
 		EventListener(EventCallbackSimple call);
 
-		void operator()(const Header& header, const modm::SmartPointer& payload) const;
+		void operator()(const Header& header, const xpcc::SmartPointer& payload) const;
 	};
 
 	class ActionHandler
@@ -103,16 +103,16 @@ private:
 		ActionHandler(ActionCallback call);
 		ActionHandler(ActionCallbackSimple call);
 
-		void operator()(const ResponseHandle& response, const modm::SmartPointer& payload) const;
+		void operator()(const ResponseHandle& response, const xpcc::SmartPointer& payload) const;
 	};
 
 	/// packetIdentifier -> callback
-	typedef std::multimap<uint8_t, EventListener> EventMap;
+	using EventMap = std::multimap<uint8_t, EventListener>;
 
 	/// packetIdentifier -> callback
-	typedef std::map<uint8_t, ActionHandler > CallbackMap;
+	using CallbackMap = std::map<uint8_t, ActionHandler >;
 	///< destination -> callbackMap
-	typedef std::map<uint8_t, CallbackMap > ActionMap;
+	using ActionMap = std::map<uint8_t, CallbackMap >;
 
 private:
 	EventMap eventMap;

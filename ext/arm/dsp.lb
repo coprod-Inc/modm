@@ -56,32 +56,30 @@ class CmsisDspModule(Module):
     def build(self, env):
         metadata = defaultdict(list)
         metadata[":build:cflags"].append("-fno-strict-aliasing")
-        metadata[":build:ccflags"].append("-Wno-sign-compare")
-        metadata[":build:ccflags"].append("-Wno-double-promotion")
 
         operations = set()
         env.outbasepath = "modm/ext/cmsis/dsp"
         if "support" in self.name:
-            env.copy("cmsis-dsp/CMSIS-DSP/PrivateInclude/arm_sorting.h", "arm_sorting.h")
+            env.copy("cmsis-dsp/PrivateInclude/arm_sorting.h", "arm_sorting.h")
         if "transform" in self.name:
-            env.copy("cmsis-dsp/CMSIS-DSP/PrivateInclude/arm_vec_fft.h", "arm_vec_fft.h")
+            env.copy("cmsis-dsp/PrivateInclude/arm_vec_fft.h", "arm_vec_fft.h")
         if "filtering" in self.name:
-            env.copy("cmsis-dsp/CMSIS-DSP/PrivateInclude/arm_vec_filtering.h", "arm_vec_filtering.h")
+            env.copy("cmsis-dsp/PrivateInclude/arm_vec_filtering.h", "arm_vec_filtering.h")
         if "svm" in self.name:
-            env.copy("cmsis-dsp/CMSIS-DSP/Include/dsp/svm_defines.h", "dsp/svm_defines.h")
+            env.copy("cmsis-dsp/Include/dsp/svm_defines.h", "dsp/svm_defines.h")
         if "matrix" in self.name:
-            env.copy("cmsis-dsp/CMSIS-DSP/Include/dsp/matrix_utils.h", "dsp/matrix_utils.h")
+            env.copy("cmsis-dsp/Include/dsp/matrix_utils.h", "dsp/matrix_utils.h")
 
         if "tables" not in self.name:
             global includes
             includes.append(self.name)
-            operations |= env.copy("cmsis-dsp/CMSIS-DSP/Include/dsp/{}_functions.h".format(self.name),
+            operations |= env.copy("cmsis-dsp/Include/dsp/{}_functions.h".format(self.name),
                                    "dsp/{}_functions.h".format(self.name))
             if env[":cmsis:dsp:with_f16"]:
-                operations |= env.copy("cmsis-dsp/CMSIS-DSP/Include/dsp/{}_functions_f16.h".format(self.name),
+                operations |= env.copy("cmsis-dsp/Include/dsp/{}_functions_f16.h".format(self.name),
                                        "dsp/{}_functions_f16.h".format(self.name))
 
-        operations |= env.copy("cmsis-dsp/CMSIS-DSP/Source/{}".format(self.path), self.path,
+        operations |= env.copy("cmsis-dsp/Source/{}".format(self.path), self.path,
                                ignore=env.ignore_files("" if env[":cmsis:dsp:with_f16"] else "*_f16*"))
 
         # For all sources add these compile flags
@@ -95,7 +93,7 @@ def init(module):
     module.description = FileReader("dsp.md")
 
 def prepare(module, options):
-    if not (options[":target"].has_driver("core:cortex-m*") or options[":target"].identifier.string == "hosted-linux"):
+    if not (options[":target"].has_driver("core:cortex-m*") or options[":target"].identifier.platform == "hosted"):
         return False
 
     module.add_option(
@@ -104,28 +102,29 @@ def prepare(module, options):
             description=descr_f16,
             default=False))
 
-    for path in Path(localpath("cmsis-dsp/CMSIS-DSP/Source")).iterdir():
+    for path in Path(localpath("cmsis-dsp/Source")).iterdir():
         if path.is_dir():
             module.add_submodule(CmsisDspModule(path))
 
     return True
 
 def build(env):
-    env.collect(":build:path.include", "modm/ext/cmsis/dsp/")
+    env.collect(":build:path.include.system", "modm/ext/cmsis/dsp/")
     env.outbasepath = "modm/ext/cmsis/dsp"
 
-    if env[":target"].identifier.string == "hosted-linux":
+    if env[":target"].identifier.platform == "hosted":
         env.collect(":build:cppdefines", "__GNUC_PYTHON__")
 
-    for path in Path(localpath("cmsis-dsp/CMSIS-DSP/Include/")).iterdir():
+    for path in Path(localpath("cmsis-dsp/Include/")).iterdir():
         if path.is_file() and not ("_f16" in path.name and not env["with_f16"]):
             # We need to replace this file to include the <cmsis_dsp_local.h>
             if path.name in ["arm_math.h", "arm_math_f16.h"]: continue;
             env.copy(path, path.name)
 
-    env.copy("cmsis-dsp/CMSIS-DSP/Include/dsp/none.h", "dsp/none.h")
-    env.copy("cmsis-dsp/CMSIS-DSP/Include/dsp/utils.h", "dsp/utils.h")
-    env.copy("cmsis-dsp/CMSIS-DSP/Include/dsp/debug.h", "dsp/debug.h")
+    env.copy("cmsis-dsp/PrivateInclude/arm_compiler_specific.h", "arm_compiler_specific.h")
+    env.copy("cmsis-dsp/Include/dsp/none.h", "dsp/none.h")
+    env.copy("cmsis-dsp/Include/dsp/utils.h", "dsp/utils.h")
+    env.copy("cmsis-dsp/Include/dsp/debug.h", "dsp/debug.h")
 
     core = env[":target"].get_driver("core")["type"][8:].upper()
     global includes

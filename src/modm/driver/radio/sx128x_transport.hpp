@@ -20,7 +20,7 @@
 #include <modm/architecture/interface/spi_device.hpp>
 #include <modm/architecture/interface/uart.hpp>
 #include <modm/math/utils/endianness.hpp>
-#include <modm/processing/fiber.hpp>
+#include <modm/architecture/interface/fiber.hpp>
 #include <modm/processing/timer.hpp>
 
 namespace modm
@@ -37,8 +37,8 @@ class Sx128xTransport
 public:
     struct Command : sx128x
     {
-        Command(Opcode opcode) : opcode(opcode) {}
-        Command(Opcode opcode, std::span<const uint8_t> vargs) : opcode(opcode), vargs(vargs) {}
+        constexpr Command(Opcode opcode) : opcode(opcode) {}
+        constexpr Command(Opcode opcode, std::span<const uint8_t> vargs) : opcode(opcode), vargs(vargs) {}
 
         // DATA ACCESS
         ///@{

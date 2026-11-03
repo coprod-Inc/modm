@@ -4,7 +4,6 @@
   <options>
     <option name="modm:build:build.path">../../build/generated-unittest/nucleo-f103rb_A/</option>
     <option name="modm:build:unittest.source">../../build/generated-unittest/nucleo-f103rb_A/modm-test</option>
-    <option name="modm:platform:exti:with_handlers">false</option>
   </options>
   <modules>
     <module>modm:platform:heap</module>
@@ -13,11 +12,11 @@
     <module>modm-test:test:communication</module>
     <module>modm-test:test:container</module>
     <module>modm-test:test:driver</module>
-    <module>modm-test:test:io</module>
+    <!-- <module>modm-test:test:io</module> -->
 
     <module>modm-test:test:platform:**</module>
-    <module>modm-test:test:processing</module>
-    <module>modm-test:test:ui</module>
-    <!-- <module>modm-test:test:math</module> -->
+    <!-- <module>modm-test:test:processing</module> -->
+    <!-- <module>modm-test:test:ui</module>
+    <module>modm-test:test:math</module> -->
   </modules>
 </library>

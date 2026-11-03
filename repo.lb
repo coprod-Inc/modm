@@ -19,15 +19,20 @@ import hashlib
 import platform
 
 from pathlib import Path
-from git import Repo
 from os.path import normpath
+try:
+    import pygit2
+except ImportError:
+    # Fallback for environments without pygit2
+    pygit2 = None
+    from git import Repo
 
 def StrictVersion(v):
     return tuple(map(int, (v.split("."))))
 
 # Check for miminum required lbuild version
 import lbuild
-min_lbuild_version = "1.21.6"
+min_lbuild_version = "1.24.1"
 if StrictVersion(getattr(lbuild, "__version__", "0.1.0")) < StrictVersion(min_lbuild_version):
     print("modm requires at least lbuild v{}, please upgrade!\n"
           "    pip3 install -U lbuild".format(min_lbuild_version))
@@ -35,15 +40,27 @@ if StrictVersion(getattr(lbuild, "__version__", "0.1.0")) < StrictVersion(min_lb
 
 # Check for submodule existance and their version
 def check_submodules():
-    repo = Repo(localpath("."))
-    has_error = True
-    if any(not sm.module_exists() for sm in repo.submodules):
+    if pygit2 is not None:
+        repo = pygit2.Repository(localpath("."))
+        def open_submodule(submodule):
+            try: return submodule.open()
+            except Exception: return None
+        submodules = {sm: open_submodule(sm) for sm in repo.submodules}
+        missing = any(subrepo is None for subrepo in submodules.values())
+        outdated = not missing and any(sm.head_id != subrepo.head.target
+                                       for sm, subrepo in submodules.items())
+    else:
+        repo = Repo(localpath("."))
+        missing = any(not sm.module_exists() for sm in repo.submodules)
+        outdated = not missing and any(sm.hexsha != sm.module().commit().hexsha
+                                       for sm in repo.submodules)
+    if missing:
         print("\n>> modm: One or more git submodules in `modm/ext/` is missing!\n"
               ">> modm: Please checkout the submodules:\n\n"
               "    cd modm\n"
               "    git submodule update --init\n")
         exit(1)
-    elif any(sm.hexsha != sm.module().commit().hexsha for sm in repo.submodules):
+    elif outdated:
         print("\n>> modm: One or more git submodules in `modm/ext/` is not up-to-date!\n"
               ">> modm: Please update the submodules:\n\n"
               "    cd modm\n"
@@ -89,7 +106,7 @@ class DevicesCache(dict):
                    for prefix, values in modm_db.items()
                      for name, path in values.items()
                        if prefix in supported and not
-                         any(name.startswith(i) for i in ignored)}
+                         name.startswith(tuple(ignored))}
 
         # Add all the tools devices
         tools_db = json.loads((tools_devices / "db.json").read_text())
@@ -180,25 +197,20 @@ def init(repo):
             description = re.search(r'description += +(""".*?"""|".*?")',
                                     module_text, flags=re.S|re.M)
             description = description.group(1).strip('"\\') if description else None
-        versions = re.search(r"#+ +[Rr]evisions? += +\[(.*)\]", module_text)
-        versions = versions.group(1).split(",") if versions is not None else [""]
-        config = {v.strip(): (module.parent / "board.xml") for v in versions}
-        repo.add_configuration(Configuration(name, description, config, versions[0].strip()))
+        if name == "hosted":
+            # One version per operating system and architecture, defaulting to this computer
+            config = {c.stem: c for c in module.parent.glob("*.xml")}
+            arch = "arm64" if platform.machine().lower() in ["arm64", "aarch64"] else "x86_64"
+            host = f"{platform.system().lower()}-{arch}"
+            default = host if host in config else "windows"
+        else:
+            versions = re.search(r"#+ +[Rr]evisions? += +\[(.*)\]", module_text)
+            versions = versions.group(1).split(",") if versions is not None else [""]
+            config = {v.strip(): (module.parent / "board.xml") for v in versions}
+            default = versions[0].strip()
+        repo.add_configuration(Configuration(name, description, config, default))
 
     # Add Jinja2 filters commonly used in this repository
-    if 'Windows' in platform.platform():
-        def windowsify(path, escape_level):
-            escaped = "\\" * (2 ** escape_level)
-            return path.replace("\\", escaped)
-        def posixify(path):
-            return path.replace("\\", "/")
-    else:
-        def windowsify(path, escape_level):
-            return path
-        def posixify(path):
-            return path
-    repo.add_filter("modm.windowsify", windowsify)
-    repo.add_filter("modm.posixify", posixify)
     repo.add_filter("modm.ord", lambda letter: ord(letter[0].lower()) - ord("a"))
     repo.add_filter("modm.chr", lambda num: chr(num + ord("A")))
     repo.add_filter("modm.digsep", lambda num: f"{num:,}".replace(",", "'"))

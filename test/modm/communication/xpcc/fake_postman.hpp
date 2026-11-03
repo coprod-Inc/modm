@@ -16,7 +16,7 @@
 #define FAKE_POSTMAN_HPP
 
 #include <modm/communication/xpcc/postman/postman.hpp>
-#include <modm/container/linked_list.hpp>
+#include <list>
 
 #include "testing_component_1.hpp"
 #include "testing_component_2.hpp"
@@ -35,13 +35,13 @@ public:
 
 	virtual DeliverInfo
 	deliverPacket(const xpcc::Header& header,
-			const modm::SmartPointer& payload);
+			const xpcc::SmartPointer& payload);
 
 	virtual bool
 	isComponentAvailable(uint8_t component) const;
 
 public:
-	modm::LinkedList<Message> messagesToDeliver;
+	std::list<Message> messagesToDeliver;
 
 	TestingComponent1 *component1;	///< must be created external!
 	TestingComponent2 *component2;	///< must be created external!

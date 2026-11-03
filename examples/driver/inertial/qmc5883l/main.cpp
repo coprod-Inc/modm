@@ -1,0 +1,62 @@
+/*
+ * Copyright (c) 2023, Alexander Solovets
+ *
+ * This file is part of the modm project.
+ *
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ */
+// ----------------------------------------------------------------------------
+
+#include <atomic>
+#include <modm/board.hpp>
+#include <modm/debug/logger.hpp>
+#include <modm/driver/inertial/qmc5883l.hpp>
+
+using namespace Board;
+using namespace std::chrono_literals;
+
+using Compass = modm::Qmc5883l<I2cMaster>;
+Compass::Data data;
+Compass compass(data);
+std::atomic<bool> dataReady{true};
+
+MODM_ISR(INT2)
+{
+	dataReady = true;
+}
+
+int
+main()
+{
+	Board::initialize();
+	// DRDY pin must be connected to Board pin 19 (Port D2).
+	Board::D19::setInput(Gpio::InputType::PullUp);
+	Board::D19::setInputTrigger(Gpio::InputTrigger::RisingEdge);
+	Board::D19::enableExternalInterrupt();
+
+	compass.initialize();
+	auto mode = Compass::Mode_t(Compass::Mode::Continious);
+	auto rate = Compass::OutputDataRate_t(Compass::OutputDataRate::_10Hz);
+	auto scale = Compass::FullScale_t(Compass::FullScale::_8G);
+	compass.configure(mode, rate | scale);
+
+	for (;;)
+	{
+		if (dataReady.exchange(false))
+		{
+			if (compass.readData())
+			{
+				MODM_LOG_INFO << "X:" << compass.x() << " Y: " << compass.y()
+							  << " Z: " << compass.z()
+							  << " OVL: " << (compass.status() & Compass::Status::OVL)
+							  << modm::endl;
+			} else
+			{
+				MODM_LOG_INFO << "readData(): Error: " << uint8_t(I2cMaster::getErrorState())
+							  << modm::endl;
+			}
+		}
+	}
+}

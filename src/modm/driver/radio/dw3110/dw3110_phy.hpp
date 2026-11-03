@@ -17,7 +17,7 @@
 #include <cstdint>
 #include <modm/architecture/interface/gpio.hpp>
 #include <modm/architecture/interface/spi_device.hpp>
-#include <modm/processing/fiber.hpp>
+#include <modm/architecture/interface/fiber.hpp>
 #include <modm/processing/timer/timeout.hpp>
 #include <span>
 
@@ -69,7 +69,7 @@ public:
 		PayloadTooLarge
 	};
 
-	Dw3110Phy();
+	constexpr Dw3110Phy();
 
 	/// Set the UWB channel used
 	void

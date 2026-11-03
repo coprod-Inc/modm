@@ -74,6 +74,9 @@ def prepare(module, options):
     module.add_option(
         BooleanOption(name="info.build", default=False,
                       description=descr_info_build))
+    module.add_option(
+        BooleanOption(name="lto", default=False,
+                      description=descr_lto))
 
     if platform in ["avr"]:
         module.add_option(
@@ -94,6 +97,12 @@ def prepare(module, options):
             PathOption(name="openocd.cfg", default="", empty_ok=True, absolute=True,
                        description=descr_openocd_cfg))
 
+    if platform in ["hosted"]:
+        module.add_option(
+            EnumerationOption(name="compiler", default="gcc",
+                              enumeration=["gcc", "clang"],
+                              description="Compiler selection"))
+
     # Queries
     module.add_query(
         EnvironmentQuery(name="source_files", factory=common_source_files))
@@ -110,6 +119,9 @@ def prepare(module, options):
     module.add_collector(
         PathCollector(name="path.include",
                       description="Search path for header files"))
+    module.add_collector(
+        PathCollector(name="path.include.system",
+                      description=descr_path_include_system))
     module.add_collector(
         PathCollector(name="path.library",
                       description="Search path for static libraries"))
@@ -183,8 +195,13 @@ def build(env):
         env.collect(":build:path.openocd", "modm/openocd")
 
     # Add compiler flags to metadata
-    for flag, values in common_compiler_flags("gcc", env[":target"]).items():
+    compiler = env.get(":build:compiler", "gcc")
+    for flag, values in common_compiler_flags(compiler, env[":target"]).items():
         env.collect(flag, *values)
+
+    if env["lto"]:
+        env.collect(":build:ccflags", "-flto=auto")
+        env.collect(":build:linkflags", "-flto=auto")
 
     # Copy python tools folder
     platform = env[":target"].identifier["platform"]
@@ -300,6 +317,29 @@ descr_info_git = """# Generate git repository state information
 """
 
 descr_info_build = """# Generate build state information"""
+
+descr_path_include_system = """# Search path for system header files
+
+Same as `path.include`, but the compiler does not emit any warnings for header
+files found in these paths. Use this for external code whose headers you cannot
+or do not want to fix.
+"""
+
+descr_lto = """# Enable Link-Time Optimization
+
+Compiles with `-flto=auto`, which defers code generation to link time so that
+the optimizer can inline and eliminate code across translation units. This
+typically shrinks the binary noticeably at the cost of a slower link step.
+
+!!! warning "LTO cannot see references from the linkerscript or inline assembly"
+    The optimizer decides what is reachable *before* the linkerscript is
+    applied, so `KEEP()` does not protect a symbol from being deleted. Anything
+    that is only referenced by the hardware (like the vector table), by the
+    linkerscript, from an inline assembly string, or only from a precompiled
+    library like newlib or libgcc (`_sbrk_r`, `__malloc_lock`, `__wrap_*`,
+    `__atomic_*`) must be marked `modm_used`. modm does this for its own
+    symbols, but you must do it for your own implementations of them.
+"""
 
 descr_openocd_cfg = """# Path to a custom OpenOCD configuration file
 

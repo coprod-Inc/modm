@@ -10,11 +10,17 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 # -----------------------------------------------------------------------------
 
+import subprocess, sys
 from os.path import join, abspath, relpath
+from SCons.Subst import quote_spaces
 
 def build_target(env, sources):
 	# Building application
-	program = env.Program(target=env["CONFIG_PROJECT_NAME"]+"{{ program_extension }}", source=sources)
+	# The linker reads a backslash in a response file as an escape character.
+	# SCons only provides the target and sources with forward slashes, but not
+	# the library paths, libraries and link flags, which are escaped instead.
+	program = env.Program(target=env["CONFIG_PROJECT_NAME"]+"{{ program_extension }}", source=sources,
+	                      TEMPFILEARGESCFUNC=lambda arg: quote_spaces(arg.replace("\\", "\\\\")))
 	chosen_program = env.ChooseFirmware(program)
 	# Clean additional artifacts
 	env.Clean(program, join(env["BUILDPATH"], env["CONFIG_PROJECT_NAME"]+".bin"))
@@ -23,9 +29,12 @@ def build_target(env, sources):
 	env.Clean(program, join(env["BUILDPATH"], env["CONFIG_PROJECT_NAME"]+".uf2"))
 
 %% if with_compilation_db
+	# Called without a shell, since many sources exceed its command line length
+	# on Windows, where the interpreter is also not called python3.
+	compilation_db = [sys.executable, "modm/tools/builder_compilation_db.py", "--" + env["CONFIG_PROFILE"]]
+	compilation_db += [relpath(env.File(s).srcnode().abspath) for s in env.Flatten(sources)]
 	env.Command("compile_commands.json", sources,
-	            "python3 modm/tools/builder_compilation_db.py --{} {}".format(
-	                env["CONFIG_PROFILE"], " ".join(relpath(env.File(s).srcnode().abspath) for s in env.Flatten(sources))))
+	            env.Action(lambda target, source, env: subprocess.call(compilation_db), None))
 	env.Alias("compilation_db", "compile_commands.json")
 %% endif
 

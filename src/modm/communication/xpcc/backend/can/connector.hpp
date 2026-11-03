@@ -17,7 +17,7 @@
 #ifndef	XPCC_CAN_CONNECTOR_HPP
 #define	XPCC_CAN_CONNECTOR_HPP
 
-#include <modm/container/linked_list.hpp>
+#include <list>
 #include "../backend_interface.hpp"
 
 // Filter
@@ -124,13 +124,13 @@ namespace xpcc
 	class CanConnector : protected CanConnectorBase, public BackendInterface
 	{
 	public:
-		CanConnector(Driver *driver);
+		constexpr CanConnector(Driver *driver);
 
 		virtual
 		~CanConnector();
 
 		virtual void
-		sendPacket(const Header &header, modm::SmartPointer payload);
+		sendPacket(const Header &header, xpcc::SmartPointer payload);
 
 
 		virtual bool
@@ -139,7 +139,7 @@ namespace xpcc
 		virtual const Header&
 		getPacketHeader() const;
 
-		virtual const modm::SmartPointer
+		virtual const xpcc::SmartPointer
 		getPacketPayload() const;
 
 		virtual void
@@ -150,10 +150,10 @@ namespace xpcc
 		update();
 
 	protected:
-		CanConnector(const CanConnector&);
+		CanConnector(const CanConnector&) = delete;
 
 		CanConnector&
-		operator = (const CanConnector&);
+		operator = (const CanConnector&) = delete;
 
 		/**
 		 * \brief	Try to send a CAN message via CAN Driver
@@ -174,15 +174,15 @@ namespace xpcc
 		class SendListItem
 		{
 		public:
-			SendListItem(const uint32_t & inIdentifier,
-					const modm::SmartPointer& inPayload) :
+			constexpr SendListItem(const uint32_t & inIdentifier,
+					const xpcc::SmartPointer& inPayload) :
 				identifier(inIdentifier),
 				payload(inPayload),
 				fragmentIndex(0)
 			{
 			}
 
-			SendListItem(const SendListItem& other) :
+			constexpr SendListItem(const SendListItem& other) :
 				identifier(other.identifier),
 				payload(other.payload),
 				fragmentIndex(other.fragmentIndex)
@@ -190,19 +190,19 @@ namespace xpcc
 			}
 
 			uint32_t identifier;
-			modm::SmartPointer payload;
+			xpcc::SmartPointer payload;
 
 			uint8_t fragmentIndex;
 
 		private:
 			SendListItem&
-			operator = (const SendListItem& other);
+			operator = (const SendListItem& other) = delete;
 		};
 
 		class ReceiveListItem
 		{
 		public:
-			ReceiveListItem(uint8_t size, const Header& inHeader,
+			constexpr ReceiveListItem(uint8_t size, const Header& inHeader,
 					uint8_t messageCounter = 0) :
 				header(inHeader), payload(size),
 				receivedFragments(0),
@@ -210,7 +210,7 @@ namespace xpcc
 			{
 			}
 
-			ReceiveListItem(const ReceiveListItem& other) :
+			constexpr ReceiveListItem(const ReceiveListItem& other) :
 				header(other.header), payload(other.payload),
 				receivedFragments(other.receivedFragments),
 				counter(other.counter)
@@ -218,18 +218,18 @@ namespace xpcc
 			}
 
 			Header header;
-			modm::SmartPointer payload;
+			xpcc::SmartPointer payload;
 
 			uint8_t receivedFragments;
 			const uint8_t counter;
 
 		private:
 			ReceiveListItem&
-			operator = (const ReceiveListItem& other);
+			operator = (const ReceiveListItem& other) = delete;
 		};
 
-		typedef modm::LinkedList< SendListItem > SendList;
-		typedef modm::LinkedList< ReceiveListItem > ReceiveList;
+		using SendList = std::list< SendListItem >;
+		using ReceiveList = std::list< ReceiveListItem >;
 
 	protected:
 		SendList sendList;

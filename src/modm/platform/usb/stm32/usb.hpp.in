@@ -14,6 +14,8 @@
 
 #include <modm/platform/device.hpp>
 #include <modm/platform/gpio/connector.hpp>
+#include <modm/platform/clock/rcc.hpp>
+#include <modm/math/units.hpp>
 
 %% set name = "Usb" ~ port | capitalize
 
@@ -28,6 +30,7 @@ public:
 	static void
 	initialize(uint8_t priority=3)
 	{
+		using namespace modm::literals;
 		static_assert(SystemClock::Usb == 48_MHz, "{{ name }} must have a 48MHz clock!");
 %% if target.family in ["g0", "l4", "l5"]
 #ifdef PWR_CR2_USV
@@ -37,13 +40,18 @@ public:
 		PWR->SVMCR |= PWR_SVMCR_UVMEN;
 %% elif target.family == "h5" and target.name != "03"
 		PWR->USBSCR |= PWR_USBSCR_USB33DEN | PWR_USBSCR_USB33SV;
+%% elif target.family == "h7" and target.name[0] in ["r", "s"]
+		PWR->CSR2 |= PWR_CSR2_USB33DEN{% if port == "hs" %} | PWR_CSR2_USBHSREGEN{% endif %};
+		for (uint32_t t = 0x10000; not (PWR->CSR2 & PWR_CSR2_USB33RDY) and t; t--) ;
 %% elif target.family in ["h7"]
 #ifdef PWR_CR3_USB33DEN
 		PWR->CR3 |= PWR_CR3_USB33DEN;
 #endif
 %% endif
 		Rcc::enable<Peripheral::{{ peripheral }}>();
-%% if is_phyc
+%% if is_phyc and target.family == "h7" and target.name[0] in ["r", "s"]
+		RCC->AHB1ENR |= RCC_AHB1ENR_USBPHYCEN; __DSB();
+%% elif is_phyc
 		Rcc::enable<Peripheral::Usbotghsulpi>();
 #ifdef RCC_APB2ENR_OTGPHYCEN
 		RCC->APB2ENR |= RCC_APB2ENR_OTGPHYCEN; __DSB();

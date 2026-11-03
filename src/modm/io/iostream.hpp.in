@@ -65,7 +65,7 @@ public:
 	 *	IOStream stream( device );
 	 * @endcode
 	 */
-	inline IOStream(IODevice& odevice) :
+	constexpr IOStream(IODevice& odevice) :
 		device(&odevice)
 	{}
 
@@ -192,6 +192,15 @@ public:
 %% endif
 
 %% if core.startswith("cortex-m")
+#ifdef __clang__
+	// For ARM 'int32_t' is of type 'int'. Therefore there is no
+	// function here for the default type 'long'. As 'long' has the same
+	// width as 'int32_t' we just use a typedef here.
+	inline IOStream& operator << (const long& v)
+	{ writeIntegerMode(static_cast<int32_t>(v)); return *this; }
+	inline IOStream& operator << (const unsigned long& v)
+	{ writeIntegerMode(static_cast<uint32_t>(v)); return *this; }
+#else
 	// For ARM 'int32_t' is of type 'long'. Therefore there is no
 	// function here for the default type 'int'. As 'int' has the same
 	// width as 'int32_t' we just use a typedef here.
@@ -199,6 +208,7 @@ public:
 	{ writeIntegerMode(static_cast<int32_t>(v)); return *this; }
 	inline IOStream& operator << (const unsigned int& v)
 	{ writeIntegerMode(static_cast<uint32_t>(v)); return *this; }
+#endif
 %% endif
 
 %% if options.with_float
@@ -323,7 +333,7 @@ private:
 %% if options.with_printf
 	static void out_char(char c, void* arg)
 	{ if (c) reinterpret_cast<modm::IOStream*>(arg)->write(c); }
-	printf_output_gadget_t output_gadget{out_char, this, NULL, 0, INT_MAX};
+	printf_output_gadget_t output_gadget{out_char, this, nullptr, 0, INT_MAX};
 %% if options.with_float
 	size_t printf_precision{6};
 %% endif
@@ -422,7 +432,7 @@ public:
 		}
 	};
 
-	inline OSizeStream() : IOStream(buffer) {}
+	constexpr OSizeStream() : IOStream(buffer) {}
 
 	inline const Buffer&
 	str() const

@@ -48,7 +48,7 @@
 
 #include "i2c_master_{{ id }}.hpp"
 #include <modm/architecture/interface/accessor.hpp>
-#include <modm/architecture/driver/atomic/queue.hpp>
+#include <modm/architecture/interface/atomic_queue.hpp>
 #include <modm/architecture/interface/atomic_lock.hpp>
 #include <modm/architecture/interface/interrupt.hpp>
 #include <modm/container.hpp>
@@ -75,7 +75,7 @@ namespace
 		modm::I2c::ConfigurationHandler configuration;
 	};
 
-	static modm::BoundedQueue<ConfiguredTransaction, {{ options["buffer.transaction"] }}> queue;
+	static modm::BoundedDeque<ConfiguredTransaction, {{ options["buffer.transaction"] }}> queue;
 	static modm::I2c::ConfigurationHandler configuration(nullptr);
 
 	// delegating
@@ -242,15 +242,15 @@ namespace
 	static inline void
 	callNextTransaction()
 	{
-		if (queue.isNotEmpty())
+		if (not queue.empty())
 		{
 			// wait until the stop condition has been generated
 			uint_fast32_t deadlockPreventer = 100'000;
 			while ((I2C{{ id }}->ISR & I2C_ISR_STOPF) and (deadlockPreventer-- > 0))
 				{};
 
-			ConfiguredTransaction next = queue.get();
-			queue.pop();
+			ConfiguredTransaction next = queue.front();
+			queue.pop_front();
 			// configure the peripheral if necessary
 			if (next.configuration and (configuration != next.configuration)) {
 				configuration = next.configuration;
@@ -281,15 +281,23 @@ namespace
 			DEBUG_STREAM("ARBITRATION LOST");
 			error = modm::I2cMaster::Error::ArbitrationLost;
 		}
-		else if ((sr1 & I2C_ISR_TIMEOUT) || (sr1 & I2C_ISR_ALERT) || (sr1 & I2C_ISR_PECERR))
+%% if smbus
+		else if (sr1 & I2C_ISR_TIMEOUT)
+		{
+			// the bus timeout expired, the peripheral sent a STOP
+			DEBUG_STREAM("TIMEOUT");
+			I2C{{ id }}->ICR = I2C_ICR_TIMOUTCF;
+			error = modm::I2cMaster::Error::BusCondition;
+		}
+		else if ((sr1 & I2C_ISR_ALERT) || (sr1 & I2C_ISR_PECERR))
 		{
 			// should only occur in unsupported SMBus mode
 			DEBUG_STREAM("UNKNOWN, SMBUS");
 			I2C{{ id }}->ICR = I2C_ICR_ALERTCF;
-			I2C{{ id }}->ICR = I2C_ICR_TIMOUTCF;
 			I2C{{ id }}->ICR = I2C_ICR_PECCF;
 			error = modm::I2cMaster::Error::Unknown;
 		}
+%% endif
 		else if (sr1 & I2C_ISR_OVR)
 		{
 			// should not occur in master mode
@@ -341,6 +349,7 @@ MODM_ISR(I2C{{ id }}_EV)
 
 	const uint16_t isr = I2C{{ id }}->ISR;
 %% if shared_irq
+	if (handleError()) return;
 	const auto cr1 = I2C{{ id }}->CR1;
 	const auto mask = (cr1 & (I2C_CR1_STOPIE | I2C_CR1_RXIE | I2C_CR1_TXIE))
 		| ((cr1 & I2C_CR1_TCIE) ? (I2C_ISR_TCR | I2C_ISR_TC) : 0u);
@@ -356,6 +365,9 @@ MODM_ISR(I2C{{ id }}_EV)
 	I2C{{ id }}->CR1 &= ~(I2C_CR1_STOPIE | I2C_CR1_TCIE | I2C_CR1_RXIE | I2C_CR1_TXIE);
 
 	I2C{{ id }}->ICR = I2C_ICR_STOPCF;
+
+	// The error interrupt or reset() detached the transaction while this event was pending
+	if (transaction == nullptr) return;
 
 #if SERIAL_DEBUGGING
 	if (isr & I2C_ISR_BUSY)  { DEBUG_STREAM_N("BUSY " ); } else { DEBUG_STREAM_N("busy " ); }
@@ -413,6 +425,8 @@ MODM_ISR(I2C{{ id }}_EV)
 				transaction = nullptr;
 			}
 			callNextTransaction();
+			// the other flags belong to the finished transaction
+			return;
 		}
 		else if (nextOperation == modm::I2c::Operation::Stop)
 		{
@@ -422,6 +436,7 @@ MODM_ISR(I2C{{ id }}_EV)
 			}
 			DEBUG_STREAM("transaction finished");
 			callNextTransaction();
+			return;
 		}
 	}
 
@@ -512,6 +527,27 @@ MODM_ISR(I2C{{ id }}_ER)
 
 // ----------------------------------------------------------------------------
 
+%% if smbus
+void
+modm::platform::I2cMaster{{ id }}::setTransactionTimeout(std::chrono::milliseconds timeout)
+{
+	// t = (TIMEOUTA + 1) * 2048 * t_I2CCLK, with ticksPerMs in Q16, rounded up
+	const uint32_t ticks = uint32_t(((uint64_t(timeout.count()) * ticksPerMs) + 0xFFFFull) >> 16);
+	if (timeout.count() <= 0 or ticks == 0 or ticks > 4096)
+	{
+		// Wait forever, or the timer cannot cover the whole timeout: leave it to
+		// the software timeout of I2cDevice instead of aborting early.
+		I2C{{ id }}->TIMEOUTR = 0;
+		return;
+	}
+	const uint16_t reload = uint16_t(ticks - 1);
+	// TIMEOUTEN must be cleared before the reload value is changed
+	I2C{{ id }}->TIMEOUTR = 0;
+	I2C{{ id }}->TIMEOUTR = I2C_TIMEOUTR_TIMOUTEN | I2C_TIMEOUTR_TEXTEN |
+			reload | (reload << I2C_TIMEOUTR_TIMEOUTB_Pos);
+}
+%% endif
+
 void
 modm::platform::I2cMaster{{ id }}::initializeWithPrescaler(uint32_t timingRegisterValue, uint8_t isrPriority)
 {
@@ -574,24 +610,40 @@ modm::platform::I2cMaster{{ id }}::initializeWithPrescaler(uint32_t timingRegist
 %% endif
 
 	// Enable peripheral
-	I2C{{ id }}->CR1 = I2C_CR1_PE;
+	// The error interrupt reports bus errors and lost arbitrations
+	I2C{{ id }}->CR1 = I2C_CR1_PE | I2C_CR1_ERRIE;
 }
 
 void
 modm::platform::I2cMaster{{ id }}::reset()
 {
-	reading.length = 0;
-	writing.length = 0;
-	error = Error::SoftwareReset;
-	if (transaction) transaction->detaching(DetachCause::ErrorCondition);
-	transaction = nullptr;
-	// remove all queued transactions
-	while (queue.isNotEmpty())
 	{
-		ConfiguredTransaction next = queue.get();
-		if (next.transaction) { next.transaction->detaching(DetachCause::ErrorCondition); }
-		queue.pop();
+		modm::atomic::Lock lock;
+		reading.length = 0;
+		writing.length = 0;
+		error = Error::SoftwareReset;
+		if (transaction) transaction->detaching(DetachCause::ErrorCondition);
+		transaction = nullptr;
+		// remove all queued transactions
+		while (not queue.empty())
+		{
+			ConfiguredTransaction next = queue.front();
+			if (next.transaction) { next.transaction->detaching(DetachCause::ErrorCondition); }
+			queue.pop_front();
+		}
+
+		I2C{{ id }}->CR1 = 0;
 	}
+	// Clock out devices that hold SDA low, which needs the system clock and
+	// therefore runs outside of the lock. The peripheral is reset afterwards,
+	// since it may see the clock pulses as bus traffic.
+	if (recoverBus) recoverBus();
+	// Clearing PE resets the state machine but keeps the configuration.
+	// PE must stay low for three APB clock cycles, the reads ensure that.
+	I2C{{ id }}->CR1 = 0;
+	for (uint8_t ii = 0; ii < 3; ii++) (void) I2C{{ id }}->CR1;
+	// The error interrupt reports bus errors and lost arbitrations
+	I2C{{ id }}->CR1 = I2C_CR1_PE | I2C_CR1_ERRIE;
 }
 
 bool
@@ -604,7 +656,7 @@ modm::platform::I2cMaster{{ id }}::start(I2cTransaction *transaction, Configurat
 
 	modm::atomic::Lock lock;
 	// if we have a place in the queue and the transaction object is valid
-	if (queue.isNotFull() && transaction)
+	if (not queue.full() && transaction)
 	{
 		// if the transaction object wants to attach to the queue
 		if (transaction->attaching())
@@ -626,7 +678,7 @@ modm::platform::I2cMaster{{ id }}::start(I2cTransaction *transaction, Configurat
 			else
 			{
 				// queue the transaction for later execution
-				queue.push(ConfiguredTransaction(transaction, configuration));
+				queue.append(ConfiguredTransaction(transaction, configuration));
 			}
 			return true;
 		}

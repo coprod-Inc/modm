@@ -76,7 +76,8 @@ list option:
 - `device.cdc`: Serial connection (uses **two** endpoints!)
 - `device.msc`: Mass Storage class.
 - `device.midi`: MIDI device.
-- `device.vendor`: WebUSB device.
+- `device.vendor`: WebUSB device. Windows binds the WinUSB driver to these
+  interfaces via the Microsoft OS 2.0 descriptors, which requires `bcdUSB = 0x0210`.
 - `device.dfu_rt`: DFU runtime.
 
 Note that you can add multiple devices at the same time, as long as there are
@@ -103,7 +104,7 @@ which will be included at the very *beginning* of the modm-generated
 // Overwrite the modm default
 #define CFG_TUD_CDC_TX_BUFSIZE 1024
 // Overwrite the TinyUSB default
-#define CFG_TUD_CDC_EP_BUFSIZE 1024
+#define CFG_TUD_CDC_RX_EPSIZE 1024
 ```
 
 You can also replace the following weakly linked descriptor functions and
@@ -133,13 +134,19 @@ manually depend on the device classes you want to implement:
 <module>modm:tinyusb:device:ecm_rndis</module>
 <module>modm:tinyusb:device:hid</module>
 <module>modm:tinyusb:device:midi</module>
+<module>modm:tinyusb:device:midi2</module>
 <module>modm:tinyusb:device:msc</module>
+<module>modm:tinyusb:device:mtp</module>
 <module>modm:tinyusb:device:ncm</module>
+<module>modm:tinyusb:device:printer</module>
 <module>modm:tinyusb:device:usbtmc</module>
 <module>modm:tinyusb:device:vendor</module>
 <module>modm:tinyusb:device:video</module>
 ```
 
+Each class module that is not part of the `modm:tinyusb:config` option is
+enabled with one instance (e.g. `CFG_TUD_AUDIO=1`), which you can override in
+the `<tusb_config_local.h>` file.
 Some of these classes require a lot of configuration that you must provide via
 the `<tusb_config_local.h>` file. Please consult the TinyUSB documentation and
 examples for their purpose.
@@ -147,15 +154,20 @@ examples for their purpose.
 
 ## Host classes
 
+Host mode is available on devices with an OTG USB peripheral and on STM32
+devices with a dual-role FSDEV peripheral (STM32G0, STM32H5, STM32U3).
+
 To use the host classes you must depend on them manually as modm does not
-provide a configuration option for them:
+provide a configuration option for them. Each selected class is enabled with
+one instance (e.g. `CFG_TUH_MSC=1`), which you can override in the
+`<tusb_config_local.h>` file:
 
 ```xml
 <module>modm:tinyusb:host:cdc</module>
-<module>modm:tinyusb:host:cdc_rndis</module>
 <module>modm:tinyusb:host:hid</module>
+<module>modm:tinyusb:host:midi</module>
+<module>modm:tinyusb:host:midi2</module>
 <module>modm:tinyusb:host:msc</module>
-<module>modm:tinyusb:host:vendor</module>
 ```
 
 

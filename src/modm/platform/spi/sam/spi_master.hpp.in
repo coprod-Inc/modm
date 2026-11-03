@@ -15,7 +15,7 @@
 #include <modm/platform/gpio/connector.hpp>
 #include <modm/math/algorithm/prescaler.hpp>
 #include <modm/platform/clock/clockgen.hpp>
-#include <modm/processing/fiber.hpp>
+#include <modm/architecture/interface/fiber.hpp>
 
 namespace modm::platform {
 
@@ -71,15 +71,15 @@ public:
 		using MosiPin = GetPin_t<PeripheralPin::Mosi, Pins...>;
 		using Spi = Peripherals::Spi<{{ id | int }}>;
 
-		if constexpr (!std::is_void<SckPin>::value) {
+		if constexpr (!std::is_void_v<SckPin>) {
 			using SckConnector = typename SckPin::template Connector<Spi, Spi::Spck>;
 			SckConnector::connect();
 		}
-		if constexpr (!std::is_void<MisoPin>::value) {
+		if constexpr (!std::is_void_v<MisoPin>) {
 			using MisoConnector = typename MisoPin::template Connector<Spi, Spi::Miso>;
 			MisoConnector::connect();
 		}
-		if constexpr (!std::is_void<MosiPin>::value) {
+		if constexpr (!std::is_void_v<MosiPin>) {
 			using MosiConnector = typename MosiPin::template Connector<Spi, Spi::Mosi>;
 			MosiPin::setInput(modm::platform::InputType::Floating);
 			MosiConnector::connect();
@@ -113,18 +113,6 @@ public:
 	static void
 	setDataOrder(DataOrder order) {
 		modm_assert(order == DataOrder::MsbFirst, "SPI DataOrder", "SPI hardware does not support alternate transmit order");
-	}
-
-	[[deprecated("Use transfer() instead!")]] // DEPRECATED: 2026q3
-	static uint8_t
-	transferBlocking(uint8_t data) {
-		return transfer(data);
-	}
-
-	[[deprecated("Use transfer() instead!")]] // DEPRECATED: 2026q3
-	static void
-	transferBlocking(const uint8_t *tx, uint8_t *rx, std::size_t length) {
-		transfer(tx, rx, length);
 	}
 
 	static uint8_t

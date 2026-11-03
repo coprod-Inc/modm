@@ -14,7 +14,7 @@
 #define MODM_BITBANG_MEMORY_INTERFACE_HPP
 
 #include <modm/architecture/utils.hpp>
-#include <modm/processing/fiber.hpp>
+#include <modm/architecture/interface/fiber.hpp>
 
 namespace modm
 {
@@ -59,10 +59,10 @@ namespace modm
 		writeData(const uint16_t data);
 
 	protected:
-		static PORT port;
-		static CS cs;
-		static CD cd;
-		static WR wr;
+		static inline PORT port;
+		static inline CS cs;
+		static inline CD cd;
+		static inline WR wr;
 	};
 
 }

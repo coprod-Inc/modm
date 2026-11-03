@@ -58,6 +58,12 @@ class Instance(Module):
         properties["target"] = target = device.identifier
         properties["id"] = self.instance
         properties["single_interrupt"] = "0" in target.family
+        # I2C2 has no SMBus support on the F0/G0/L0 families, all other instances
+        # and families do. Deduced from the protocol groups of the device
+        # generator until the device files carry the SMBus feature themselves.
+        # The U0 CMSIS header has no SMBus registers for any instance
+        properties["smbus"] = not ((self.instance == 2 and target["family"] in ["f0", "g0", "l0"]) or
+                                   target["family"] in ["u0"])
         shared_irq = get_shared_irqs(device).get(self.instance)
         properties["shared_irq"] = shared_irq
         if shared_irq:
@@ -88,6 +94,7 @@ def prepare(module, options):
         ":architecture:interrupt",
         ":cmsis:device",
         ":container",
+        ":math:utils",
         ":platform:gpio")
 
     global_properties["shared_irqs"] = defaultdict(list)

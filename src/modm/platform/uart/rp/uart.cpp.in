@@ -13,11 +13,11 @@
  */
 // ----------------------------------------------------------------------------
 
-#include <modm/architecture/driver/atomic/queue.hpp>
+#include <modm/architecture/interface/atomic_queue.hpp>
 #include <modm/architecture/interface/atomic_lock.hpp>
 #include <modm/architecture/interface/interrupt.hpp>
 #include <modm/platform/core/resets.hpp>
-#include <modm/processing/fiber.hpp>
+#include <modm/architecture/interface/fiber.hpp>
 
 #include "../device.hpp"
 

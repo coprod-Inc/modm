@@ -38,8 +38,10 @@ struct SystemClock
 		.M = 4,   //   8 MHz /   4 =   2 MHz
 		.N = 250, //   2 MHz * 250 = 500 MHz
 		.P = 2,   // 500 MHz /   2 = 250 MHz = F_cpu
+		.Q = 4,   // 500 MHz /   4 = 125 MHz = F_spi123
 	};
 	static constexpr uint32_t Pll1P = Hse / pll1.M * pll1.N / pll1.P;
+	static constexpr uint32_t Pll1Q = Hse / pll1.M * pll1.N / pll1.Q;
 	static_assert(Pll1P == Rcc::MaxFrequency);
 
 	static constexpr Rcc::PllConfig pll3
@@ -77,8 +79,12 @@ struct SystemClock
 	static constexpr uint32_t OctoSpi1 = Ahb4;
 	static constexpr uint32_t Eth = Ahb4;
 
+	// SPI1-3 use PLL1Q after reset
+	static constexpr uint32_t Spi1 = Pll1Q;
+	static constexpr uint32_t Spi2 = Pll1Q;
+	static constexpr uint32_t Spi3 = Pll1Q;
+
 	// Peripherals on APB2
-	static constexpr uint32_t Spi1 = Apb2;
 	static constexpr uint32_t Spi4 = Apb2;
 	static constexpr uint32_t Spi6 = Apb2;
 	static constexpr uint32_t Usart1 = Apb2;
@@ -86,8 +92,6 @@ struct SystemClock
 	static constexpr uint32_t Sai2 = Apb2;
 
 	// Peripherals on APB1
-	static constexpr uint32_t Spi2 = Apb1;
-	static constexpr uint32_t Spi3 = Apb1;
 	static constexpr uint32_t Usart2 = Apb1;
 	static constexpr uint32_t Usart3 = Apb1;
 	static constexpr uint32_t Uart4 = Apb1;
@@ -216,6 +220,16 @@ using Uart = BufferedUart<UsartHal3, UartTxBuffer<2048>>;
 /// @}
 }
 
+namespace i2c
+{
+/// @ingroup modm_board_nucleo_h563zi
+/// @{
+using Sda = D14;
+using Scl = D15;
+using Controller = I2cMaster1;
+/// @}
+}
+
 /// @ingroup modm_board_nucleo_h563zi
 /// @{
 using LoggerDevice = modm::IODeviceWrapper< stlink::Uart, modm::IOBuffer::BlockIfFull >;
@@ -234,6 +248,13 @@ initialize()
 	LedRed::setOutput(modm::Gpio::Low);
 
 	Button::setInput();
+}
+
+inline void
+initializeI2c()
+{
+	i2c::Controller::connect<i2c::Sda::Sda, i2c::Scl::Scl>();
+	i2c::Controller::initialize<SystemClock, 400_kHz>();
 }
 
 inline void

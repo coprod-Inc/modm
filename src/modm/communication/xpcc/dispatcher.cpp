@@ -21,11 +21,6 @@
 #undef  MODM_LOG_LEVEL
 #define MODM_LOG_LEVEL modm::log::INFO
 
-xpcc::Dispatcher::Dispatcher(BackendInterface *backend_, Postman* postman_) :
-	backend(backend_), postman(postman_)
-{
-}
-
 // ----------------------------------------------------------------------------
 void
 xpcc::Dispatcher::update()
@@ -50,7 +45,7 @@ xpcc::Dispatcher::updateOnceRx()
 	if (this->backend->isPacketAvailable())
 	{
 		const Header& header = this->backend->getPacketHeader();
-		const modm::SmartPointer& payload = this->backend->getPacketPayload();
+		const xpcc::SmartPointer& payload = this->backend->getPacketPayload();
 
 		if (header.type == Header::Type::REQUEST && !header.isAcknowledge)
 		{
@@ -70,7 +65,7 @@ xpcc::Dispatcher::updateOnceRx()
 
 void
 xpcc::Dispatcher::handleActionCall(const Header& header,
-		const modm::SmartPointer& payload)
+		const xpcc::SmartPointer& payload)
 {
 	xpcc::Postman::DeliverInfo result = postman->deliverPacket(header, payload);
 
@@ -107,7 +102,7 @@ xpcc::Dispatcher::Entry::headerFits(const Header& inHeader) const
 
 bool
 xpcc::Dispatcher::handlePacket(const Header& header,
-		const modm::SmartPointer& payload)
+		const xpcc::SmartPointer& payload)
 {
 	bool ack = false;
 	auto entry = this->entries.begin();
@@ -118,7 +113,7 @@ xpcc::Dispatcher::handlePacket(const Header& header,
 			// waiting for ack, no response can be handled
 			if (entry->headerFits(header))
 			{
-				entry = this->entries.remove(entry);
+				entry = this->entries.erase(entry);
 				return ack;
 			}
 		}
@@ -148,7 +143,7 @@ xpcc::Dispatcher::handlePacket(const Header& header,
 						// cannot happen, since responses with callbacks are
 						// not possible
 					}
-					entry = this->entries.remove(entry);
+					entry = this->entries.erase(entry);
 				}
 				return ack;
 			}
@@ -179,7 +174,7 @@ xpcc::Dispatcher::sendMessageToInnerComponent(EntryIterator entry)
 			return entry;
 		}
 		else {
-			return this->entries.remove(entry);
+			return this->entries.erase(entry);
 		}
 	}
 	else
@@ -204,12 +199,12 @@ xpcc::Dispatcher::sendMessageToInnerComponent(EntryIterator entry)
 				{
 					req->callbackResponse(entry->header, entry->payload);
 				}
-				this->entries.remove(req);
+				this->entries.erase(req);
 				break;
 			}
 		}
 
-		return this->entries.remove(entry);
+		return this->entries.erase(entry);
 	}
 
 	return entry;
@@ -229,7 +224,7 @@ xpcc::Dispatcher::handleWaitingMessages()
 				postman->deliverPacket(entry->header, entry->payload);
 				backend->sendPacket(entry->header, entry->payload);
 
-				entry = this->entries.remove(entry);
+				entry = this->entries.erase(entry);
 				continue;
 			}
 			else
@@ -262,7 +257,7 @@ xpcc::Dispatcher::handleWaitingMessages()
                     Header header = entry->header;
                     header.type = Header::Type::TIMEOUT;
                     entry->callbackResponse(header, entry->payload);
-					entry = this->entries.remove(entry);
+					entry = this->entries.erase(entry);
 					continue;
 				}
 				else
@@ -289,21 +284,21 @@ xpcc::Dispatcher::handleWaitingMessages()
 // ----------------------------------------------------------------------------
 void
 xpcc::Dispatcher::addMessage(const Header& header,
-		modm::SmartPointer& smartPayload)
+		xpcc::SmartPointer& smartPayload)
 {
-	this->entries.append(Entry(header, smartPayload));
+	this->entries.push_back(Entry(header, smartPayload));
 }
 
 void
 xpcc::Dispatcher::addMessage(const Header& header,
-		modm::SmartPointer& smartPayload, ResponseCallback& responseCallback)
+		xpcc::SmartPointer& smartPayload, ResponseCallback& responseCallback)
 {
-	this->entries.append(Entry(header, smartPayload, responseCallback));
+	this->entries.push_back(Entry(header, smartPayload, responseCallback));
 }
 
 void
 xpcc::Dispatcher::addResponse(const Header& header,
-		modm::SmartPointer& smartPayload)
+		xpcc::SmartPointer& smartPayload)
 {
 	// it makes response more important, than requests
 	// it prevents intern loops. Since it is possible to give a response while
@@ -314,5 +309,5 @@ xpcc::Dispatcher::addResponse(const Header& header,
 	// but now responses are handled in reverse order that's not good
 	// what to do? a separator between responses and requests possible?
 
-	this->entries.prepend(Entry(header, smartPayload));
+	this->entries.push_front(Entry(header, smartPayload));
 }

@@ -11,8 +11,14 @@
 // ----------------------------------------------------------------------------
 
 #include <modm/math/utils/operator.hpp>
+#include <cmath>
 
 #include "operator_test.hpp"
+
+static_assert(modm::math::sqrt(0) == 0);
+static_assert(modm::math::sqrt(452613) == 673);
+static_assert(modm::math::sqrt(4294800000UL) == 65535);
+static_assert(modm::math::sqrt(0xffffffffUL) == 65535);
 
 void
 OperatorTest::testSqrt()
@@ -30,52 +36,12 @@ OperatorTest::testSqrt()
 	TEST_ASSERT_EQUALS(modm::math::sqrt(10000000), 3162U);
 	TEST_ASSERT_EQUALS(modm::math::sqrt(4000000000UL), 63246U);
 	TEST_ASSERT_EQUALS(modm::math::sqrt(4294800000UL), 65535U);
-}
 
-void
-OperatorTest::testMultiplication()
-{
-	TEST_ASSERT_EQUALS(modm::math::mul((uint16_t) 1, (uint16_t) 1), 1U);
-	TEST_ASSERT_EQUALS(modm::math::mul((uint16_t) 10, (uint16_t) 10), 100U);
-	TEST_ASSERT_EQUALS(modm::math::mul((uint16_t) 100, (uint16_t) 100), 10000U);
-	TEST_ASSERT_EQUALS(modm::math::mul((uint16_t) 1000, (uint16_t) 1000), 1000000U);
-	TEST_ASSERT_EQUALS(modm::math::mul((uint16_t) 10000, (uint16_t) 10000), 100000000U);
-	TEST_ASSERT_EQUALS(modm::math::mul((uint16_t) 60000, (uint16_t) 60000), 3600000000U);
-
-	TEST_ASSERT_EQUALS(modm::math::mul((int16_t) 1, (int16_t) 1), 1);
-	TEST_ASSERT_EQUALS(modm::math::mul((int16_t) 10, (int16_t) 10), 100);
-	TEST_ASSERT_EQUALS(modm::math::mul((int16_t) 100, (int16_t) 100), 10000);
-	TEST_ASSERT_EQUALS(modm::math::mul((int16_t) 1000, (int16_t) 1000), 1000000);
-	TEST_ASSERT_EQUALS(modm::math::mul((int16_t) 10000, (int16_t) 10000), 100000000);
-
-	TEST_ASSERT_EQUALS(modm::math::mul((int16_t) -1, (int16_t) -1), 1);
-	TEST_ASSERT_EQUALS(modm::math::mul((int16_t) -10, (int16_t) 10), -100);
-	TEST_ASSERT_EQUALS(modm::math::mul((int16_t) 100, (int16_t) -100), -10000);
-	TEST_ASSERT_EQUALS(modm::math::mul((int16_t) 1000, (int16_t) 1000), 1000000);
-	TEST_ASSERT_EQUALS(modm::math::mul((int16_t) 32000, (int16_t) 32000), 1024000000);
-	TEST_ASSERT_EQUALS(modm::math::mul((int16_t) -32000, (int16_t) -32000), 1024000000);
-}
-
-void
-OperatorTest::testMultiplyAccumulate()
-{
-	int32_t offset = -2130;
-
-	TEST_ASSERT_EQUALS(modm::math::mac(offset, (int16_t) 1, (int16_t) 1), 1 - 2130);
-	TEST_ASSERT_EQUALS(modm::math::mac(offset, (int16_t) 10, (int16_t) 10), 100 - 2130);
-	TEST_ASSERT_EQUALS(modm::math::mac(offset, (int16_t) 100, (int16_t) 100), 10000 - 2130);
-	TEST_ASSERT_EQUALS(modm::math::mac(offset, (int16_t) 1000, (int16_t) 1000), 1000000 - 2130);
-	TEST_ASSERT_EQUALS(modm::math::mac(offset, (int16_t) 10000, (int16_t) 10000), 100000000 - 2130);
-	TEST_ASSERT_EQUALS(modm::math::mac(offset, (int16_t) -10000, (int16_t) -10000), 100000000 - 2130);
-
-	offset = 1235678;
-
-	TEST_ASSERT_EQUALS(modm::math::mac(offset, (int16_t) -1, (int16_t) -1), 1 + 1235678);
-	TEST_ASSERT_EQUALS(modm::math::mac(offset, (int16_t) -10, (int16_t) 10), -100 + 1235678);
-	TEST_ASSERT_EQUALS(modm::math::mac(offset, (int16_t) 100, (int16_t) -100), -10000 + 1235678);
-	TEST_ASSERT_EQUALS(modm::math::mac(offset, (int16_t) 1000, (int16_t) 1000), 1000000 + 1235678);
-	TEST_ASSERT_EQUALS(modm::math::mac(offset, (int16_t) -1000, (int16_t) 1000), -1000000 + 1235678);
-	TEST_ASSERT_EQUALS(modm::math::mac(offset, (int16_t) 32000, (int16_t) 32000), 1024000000 + 1235678);
-	TEST_ASSERT_EQUALS(modm::math::mac(offset, (int16_t) -32000, (int16_t) -32000), 1024000000 + 1235678);
-	TEST_ASSERT_EQUALS(modm::math::mac(offset, (int16_t) -32000, (int16_t) 32000), -1024000000 + 1235678);
+#ifndef MODM_CPU_AVR
+	// rounds to nearest like the floating point square root
+	for (uint32_t x = 0; x < 0xfffe0000; x += (x < 70000) ? 1 : 0x10001)
+	{
+		TEST_ASSERT_EQUALS(modm::math::sqrt(x), uint16_t(std::lround(std::sqrt(double(x)))));
+	}
+#endif
 }

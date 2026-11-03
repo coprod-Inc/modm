@@ -12,9 +12,9 @@
 #ifndef MODM_HX711_HPP
 #define MODM_HX711_HPP
 
-#include <modm/processing/fiber.hpp>
+#include <modm/architecture/interface/fiber.hpp>
 #include <modm/architecture/interface/gpio.hpp>
-#include <modm/processing/fiber.hpp>
+#include <modm/architecture/interface/fiber.hpp>
 
 namespace modm
 {
@@ -34,7 +34,7 @@ struct hx711
 	{
 		using Sck = void; // required
 		using Data = void; // required
-		static const InputChannelAndGain mode = InputChannelAndGain::ChA_128;
+		static constexpr InputChannelAndGain mode = InputChannelAndGain::ChA_128;
 	};
 };
 

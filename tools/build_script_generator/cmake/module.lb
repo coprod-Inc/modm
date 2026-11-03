@@ -148,7 +148,8 @@ def post_build(env):
         repo_flags = env.query("::collect_flags")(env, repo_filter)
 
         warning_pattern = re.compile("^-W")
-        exclude_pattern = re.compile("(^-W|^-O)")
+        # CMake build types set the release optimization level, but Debug defaults to -O0
+        exclude_pattern = re.compile("(^-W|^-O(?!g))")
 
         for filename, fileflags in repo_flags.items():
             if filename != None:
@@ -177,6 +178,7 @@ def post_build(env):
             files.append( (sfile, profiles) )
 
         include_paths = env.collector_values("::path.include", filterfunc=repo_filter)
+        include_paths += env.collector_values("::path.include.system", filterfunc=repo_filter)
         private_include_paths = env.collector_values(
             "::path.include", filterfunc=inv_repo_filter
         )

@@ -16,7 +16,7 @@
 
 #include <modm/architecture/interface/i2c_device.hpp>
 #include <modm/architecture/interface/spi_device.hpp>
-#include <modm/processing/fiber.hpp>
+#include <modm/architecture/interface/fiber.hpp>
 
 namespace modm
 {
@@ -35,7 +35,7 @@ template < class I2cMaster >
 class Ixm42xxxTransportI2c : public modm::I2cDevice< I2cMaster >
 {
 public:
-    Ixm42xxxTransportI2c(uint8_t address);
+    constexpr Ixm42xxxTransportI2c(uint8_t address);
 
 protected:
     // RAW REGISTER ACCESS
@@ -70,7 +70,7 @@ template < class SpiMaster, class Cs >
 class Ixm42xxxTransportSpi : public modm::SpiDevice< SpiMaster >
 {
 public:
-    Ixm42xxxTransportSpi(uint8_t /*address*/);
+    constexpr Ixm42xxxTransportSpi(uint8_t /*address*/);
 
     /// pings the sensor
     bool

@@ -16,7 +16,6 @@
 #define	MODM_SAB_SLAVE_HPP
 
 #include <cstddef>
-#include <modm/architecture/interface/accessor_flash.hpp>
 
 #include "interface.hpp"
 
@@ -88,10 +87,10 @@ namespace modm
 		protected:
 			Response(Transmitter *parent);
 
-			Response(const Response&);
+			Response(const Response&) = delete;
 
 			Response&
-			operator = (const Response&);
+			operator = (const Response&) = delete;
 
 			Transmitter *transmitter;
 			bool triggered;				///< is used by abp::Slave to check that a response was send
@@ -136,15 +135,38 @@ namespace modm
 		 */
 		struct Action
 		{
-			typedef void (Callable::*Callback)(Response& response, const void *payload);
+			using Callback = void (*)(Callable *object, Response& response, const void *payload);
+
+			/// Calls `Function` on `object`, casted back to its own class
+			template<auto Function>
+			static void
+			invoke(Callable *object, Response& response, const void *payload)
+			{
+				call(Function, object, response, payload);
+			}
 
 			inline void
-			call(Response& response, const void *payload);
+			call(Response& response, const void *payload) const;
 
 			Callable *object;
 			Callback function;			//!< Method callActionback
 			uint16_t payloadLength;		//!< Payload length in bytes
 			uint8_t command;
+
+		private:
+			template<typename C>
+			static void
+			call(void (C::*function)(Response&), Callable *object, Response& response, const void *)
+			{
+				(static_cast<C *>(object)->*function)(response);
+			}
+
+			template<typename C, typename P>
+			static void
+			call(void (C::*function)(Response&, const P *), Callable *object, Response& response, const void *payload)
+			{
+				(static_cast<C *>(object)->*function)(response, static_cast<const P *>(payload));
+			}
 		};
 
 		/**
@@ -153,7 +175,7 @@ namespace modm
 		 * \code
 		 * typedef modm::sab::Slave< modm::sab::Interface< modm::BufferedUart0 > > Slave;
 		 *
-		 * FLASH_STORAGE(modm::sab::Action actionList[]) =
+		 * const modm::sab::Action actionList[] =
 		 * {
 		 *     SAB_ACTION(0x57, object, Object::method1,  0),
 		 *     SAB_ACTION(0x03, object, Object::method2,  2),
@@ -163,8 +185,7 @@ namespace modm
 		 * main()
 		 * {
 		 *     // initialize the interface
-		 *     Slave slave(0x02,
-		 *             modm::accessor::asFlash(actionList),
+		 *     Slave slave(0x02, actionList,
 		 *             sizeof(actionList) / sizeof(modm::sab::Action));
 		 *
 		 *     while (true)
@@ -187,14 +208,13 @@ namespace modm
 			 * \brief	Initialize the slave
 			 *
 			 * \param	address		Own address
-			 * \param	list		List of all action callbacks, need to be
-			 * 						stored in flash-memory
+			 * \param	list		List of all action callbacks
 			 * \param	count		Number of entries in \a actionList
 			 *
 			 * \see		sab::modm::Action
 			 * \see		SAB_ACTION()
 			 */
-			Slave(uint8_t address, modm::accessor::Flash<Action> list, uint8_t count);
+			constexpr Slave(uint8_t address, const Action *list, uint8_t count);
 
 			/**
 			 * \brief	Receive and process messages
@@ -211,7 +231,7 @@ namespace modm
 			send(bool acknowledge, const void *payload, std::size_t payloadLength);
 
 			uint8_t ownAddress;
-			modm::accessor::Flash<Action> actionList;
+			const Action *actionList;
 			uint8_t actionCount;
 
 			uint8_t currentCommand;
@@ -251,7 +271,7 @@ namespace modm
 	 *
 	 * Sensor sensor;
 	 *
-	 * FLASH_STORAGE(modm::sab::Action actionList[]) =
+	 * const modm::sab::Action actionList[] =
 	 * {
 	 *     SAB_ACTION(0x57, sensor, Sensor::sendValue,   0),
 	 *     SAB_ACTION(0x03, sensor, Sensor::doSomething, sizeof(uint32_t)),
@@ -272,7 +292,7 @@ namespace modm
 #else
 	#define	SAB_ACTION(command, object, function, length)		\
 		{	static_cast<modm::sab::Callable *>(&object), \
-			reinterpret_cast<modm::sab::Action::Callback>(&function), \
+			&modm::sab::Action::invoke<&function>, \
 			length, \
 			command }
 #endif	// __DOXYGEN__

@@ -15,7 +15,7 @@
 #include <optional>
 #include <span>
 #include <utility>
-#include <modm/processing/fiber.hpp>
+#include <modm/architecture/interface/fiber.hpp>
 #include <modm/math/units.hpp>
 
 // LSM6DSO uses same I2C/SPI transport as the older LIS3 sensors
@@ -195,7 +195,7 @@ public:
 	 * For I2c this also sets the address to 0x6a (alternative: 0x6b with pin
 	 * SA0 high).
 	 */
-	explicit Lsm6dso(uint8_t address=0x6a);
+	explicit constexpr Lsm6dso(uint8_t address=0x6a);
 
 	/**
 	 * @brief Initializes the device and driver

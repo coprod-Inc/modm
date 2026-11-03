@@ -21,10 +21,10 @@
 #include <avr/io.h>
 #include <avr/interrupt.h>
 
-#include <modm/architecture/driver/atomic/queue.hpp>
+#include <modm/architecture/interface/atomic_queue.hpp>
 #include <modm/architecture/interface/atomic_lock.hpp>
 #include <modm/architecture/interface/interrupt.hpp>
-#include <modm/processing/fiber.hpp>
+#include <modm/architecture/interface/fiber.hpp>
 
 #include "uart_defines.h"
 
