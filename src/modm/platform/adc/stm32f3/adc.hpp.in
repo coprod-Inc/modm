@@ -3,6 +3,7 @@
  * Copyright (c) 2014, 2016-2018, Niklas Hauser
  * Copyright (c) 2017, Sascha Schade
  * Copyright (c) 2022-2023, Christopher Durand
+ * Copyright (c) 2026, coprod LLC
  *
  * This file is part of the modm project.
  *
@@ -75,6 +76,9 @@ public:
 		InternalReference = 0,
 		Temperature = 17,
 		BatDiv3     = 18,
+%% elif target["family"] in ["h5"]
+		VSense = 16,
+		InternalReference = 17,
 %% endif
 %% elif id == 2
 %% if target["family"] in ["f3"]
@@ -101,6 +105,9 @@ public:
 		// The internal reference can be connected to channel 17 by setting ADC2_ROUT1 in SYSCFG_ADC2ALT
 		InternalReference = 17,
 %% endif
+%% elif target["family"] in ["h5"]
+		BatDiv4 = 16,
+		VddCore = 17,
 %% endif
 %% elif id == 3
 %% if target["family"] in ["f3"]
@@ -180,6 +187,14 @@ public:
 		Pll3R = RCC_{{ ccipr }}_ADCSEL_0,
 		PerClk = RCC_{{ ccipr }}_ADCSEL_1,
 		NoClock = PerClk, // for compatibility if sync. clock is used and setting is ignored
+%% elif target["family"] in ["h5"]
+		Hclk = 0,
+		SystemClock = RCC_{{ ccipr }}_ADCDACSEL_0,
+		Pll2R = RCC_{{ ccipr }}_ADCDACSEL_1,
+		Hse = RCC_{{ ccipr }}_ADCDACSEL_1 | RCC_{{ ccipr }}_ADCDACSEL_0,
+		HsiKer = RCC_{{ ccipr }}_ADCDACSEL_2,
+		CsiKer = RCC_{{ ccipr }}_ADCDACSEL_2 | RCC_{{ ccipr }}_ADCDACSEL_0,
+		NoClock = Hclk, // for compatibility if sync. clock is used and setting is ignored
 %% else
 		NoClock = 0, // No clock selected.
 		PllSai1 = RCC_{{ ccipr }}_ADCSEL_0, // PLLSAI1 "R" clock (PLLADC1CLK) selected as ADCs clock
@@ -209,7 +224,7 @@ public:
 		Div128 				= RCC_CFGR2_{{ adc_pre }}_DIV128,
 		Div256 				= RCC_CFGR2_{{ adc_pre }}_DIV256,
 		Div256AllBits 		= RCC_CFGR2_{{ adc_pre }},	// for bit clear
-%% elif target["family"] in ["l4", "l5", "g4", "h7"]
+%% elif target["family"] in ["l4", "l5", "g4", "h7", "h5"]
 		Div1 				= 0,
 		Div2 				= ADC_CCR_PRESC_0,
 		Div4 				= ADC_CCR_PRESC_1,
@@ -238,7 +253,7 @@ public:
 		Cycles388 	= 0b110,	//< 387.5 ADC clock cycles
 		Cycles811 	= 0b111,	//< 810.5 ADC clock cycles
 	};
-%% elif target["family"] in ["l4", "l5", "g4", "h7"]
+%% elif target["family"] in ["l4", "l5", "g4", "h7", "h5"]
 	enum class SampleTime : uint8_t	// TODO: What is the best type?
 	{
 		Cycles2 	= 0b000,	//<   1.5 ADC clock cycles
@@ -273,13 +288,14 @@ public:
 	enum class CalibrationMode : uint32_t
 	{
 		SingleEndedInputsMode = 0,
-		DifferntialInputsMode = ADC_CR_ADCALDIF,
+		DifferentialInputsMode = ADC_CR_ADCALDIF,
+		DifferntialInputsMode [[deprecated("Use DifferentialInputsMode")]] = DifferentialInputsMode,
 		DoNotCalibrate = 0xff,	// if you want to avoid calibration
 	};
 
 	enum class VoltageRegulatorState : uint32_t
 	{
-%% if target["family"] in ["l4", "l5", "g4", "h7"]
+%% if target["family"] in ["l4", "l5", "g4", "h7", "h5"]
 		Enabled 		= ADC_CR_ADVREGEN,
 %% elif target["family"] in ["f3"]
 		// Intermediate state is needed to move from enabled to disabled
@@ -366,6 +382,7 @@ public:
 		Event5 = 0x05u,
 		Event6 = 0x06u,
 		Event7 = 0x07u,
+		Event8 = 0x08u,
 		Event9 = 0x09u,
 		Event10 = 0x0Au,
 		Event11 = 0x0Bu,
@@ -373,7 +390,7 @@ public:
 		Event13 = 0x0Du,
 		Event14 = 0x0Eu,
 		Event15 = 0x0Fu,
-%% if target["family"] in ["g4", "h7"]
+%% if target["family"] in ["g4", "h7", "h5"]
 		Event16 = 0x10u,
 		Event17 = 0x11u,
 		Event18 = 0x12u,
@@ -401,6 +418,21 @@ public:
 		Slot3 = 3,
 	};
 
+%% if dual_mode
+	/// Dual ADC mode of ADC1 (master) and ADC2 (slave)
+	enum class DualMode : uint32_t
+	{
+		Independent = 0,
+		RegularSimultaneousInjectedSimultaneous = ADC_CCR_DUAL_0,
+		RegularSimultaneousInjectedAlternateTrigger = ADC_CCR_DUAL_1,
+		RegularInterleavedInjectedSimultaneous = ADC_CCR_DUAL_1 | ADC_CCR_DUAL_0,
+		InjectedSimultaneousOnly = ADC_CCR_DUAL_2 | ADC_CCR_DUAL_0,
+		RegularSimultaneousOnly = ADC_CCR_DUAL_2 | ADC_CCR_DUAL_1,
+		InterleavedOnly = ADC_CCR_DUAL_2 | ADC_CCR_DUAL_1 | ADC_CCR_DUAL_0,
+		InjectedAlternateTriggerOnly = ADC_CCR_DUAL_3 | ADC_CCR_DUAL_0,
+	};
+
+%% endif
 public:
 	template< class... Signals >
 	static void
@@ -433,6 +465,8 @@ public:
 %% if clock_mux
 %% if target["family"] == "h7"
 				const ClockSource clk_src = ClockSource::PerClk,
+%% elif target["family"] == "h5"
+				const ClockSource clk_src = ClockSource::Hclk,
 %% else
 				const ClockSource clk_src = ClockSource::SystemClock,
 %% endif
@@ -457,6 +491,21 @@ public:
 	static inline void
 	setPrescaler(const Prescaler pre);
 
+%% if dual_mode
+	/**
+	 * Set the dual mode of ADC1 (master) and ADC2 (slave).
+	 *
+	 * In simultaneous modes, conversions are triggered by the master ADC only.
+	 *
+	 * @return false if a conversion is ongoing on ADC1 or ADC2
+	 */
+	static inline bool
+	setDualMode(DualMode mode);
+
+	static inline DualMode
+	getDualMode();
+
+%% endif
 	/**
 	 * Returns true if the ADRDY bit of the ISR is set
 	 **/
@@ -505,6 +554,14 @@ public:
 	static inline bool
 	setChannelSequence(std::span<const SequenceChannel> sequence);
 
+	/**
+	 * Set the sample time of a channel without changing the conversion sequence.
+	 *
+	 * @return false if the channel is invalid
+	 */
+	static inline bool
+	configureChannel(Channel channel, SampleTime sampleTime);
+
 	/// Setting the channel for a Pin
 	template< class Gpio >
 	static inline bool
@@ -513,7 +570,7 @@ public:
 		return setChannel(getPinChannel<Gpio>(), sampleTime);
 	}
 	/// Get the channel for a Pin
-%% if target["family"] in ["h7"]
+%% if target["family"] in ["h7", "h5"]
 	/// \warning Always returns the positive single-ended channel.
 	///          Differential mode is not supported yet.
 %% endif
@@ -521,7 +578,7 @@ public:
 	static inline constexpr Channel
 	getPinChannel()
 	{
-%% if target["family"] in ["h7"]
+%% if target["family"] in ["h7", "h5"]
 		using modm::platform::detail::AdcPolarity;
 		constexpr int8_t channel{detail::AdcChannel<typename Gpio::Data, Peripheral::Adc{{ id }}, AdcPolarity::Positive>};
 %% else
@@ -601,6 +658,28 @@ public:
 	setInjectedConversionChannel(uint8_t index, Channel channel, SampleTime sampleTime);
 
 	/**
+	 * Set the channel of an injected conversion without changing its sample time.
+	 *
+	 * @arg index Index of injected conversion in sequence (0..3)
+	 * @return true if configuration is successful, false if arguments are invalid
+	 */
+	static inline bool
+	setInjectedConversionChannel(uint8_t index, Channel channel);
+
+	/**
+	 * Set the channel of an injected conversion without changing its sample time.
+	 *
+	 * @arg index Index of injected conversion in sequence (0..3)
+	 * @return true if configuration is successful, false if arguments are invalid
+	 */
+	template<class Gpio>
+	static inline bool
+	setInjectedConversionChannel(uint8_t index)
+	{
+		return setInjectedConversionChannel(index, getPinChannel<Gpio>());
+	}
+
+	/**
 	 * @arg index Index of injected conversion in sequence (0..3)
 	 * @return true if configuration is successful, false if arguments are invalid
 	 */
@@ -616,6 +695,15 @@ public:
 	setInjectedConversionSequenceLength(uint8_t length);
 
 	/**
+	 * Set the channels, sample times and length of the injected conversion sequence.
+	 *
+	 * @arg sequence 1 to 4 channels
+	 * @return true if configuration is successful, false if arguments are invalid
+	 */
+	static inline bool
+	setInjectedConversionSequence(std::span<const SequenceChannel> sequence);
+
+	/**
 	 * enable injected conversions on external trigger.
 	 *
 	 * @param externalTriggerPolarity
@@ -626,6 +714,13 @@ public:
 	static inline void enableInjectedConversionExternalTrigger(
 		ExternalTriggerPolarity externalTriggerPolarity,
 		ExternalTriggerEvent externalTriggerEvent);
+
+	/**
+	 * Change the polarity of the injected conversion external trigger
+	 * without changing the trigger source.
+	 */
+	static inline void setInjectedConversionExternalTriggerPolarity(
+		ExternalTriggerPolarity externalTriggerPolarity);
 
 	/**
 	 * Disable injected conversions external trigger.
@@ -772,10 +867,6 @@ public:
 
 	static inline void
 	setDmaMode(DmaMode mode);
-
-private:
-	static inline bool
-	configureChannel(Channel channel, SampleTime sampleTime);
 };
 
 }

@@ -1,0 +1,10 @@
+<library>
+  <extends>modm:nucleo-h563zi</extends>
+  <options>
+    <option name="modm:build:build.path">../../../build/nucleo_h563zi/adc_basic</option>
+  </options>
+  <modules>
+    <module>modm:platform:adc:1</module>
+    <module>modm:build:scons</module>
+  </modules>
+</library>
