@@ -161,9 +161,9 @@ SpiMaster{{ id }}_Dma<DmaChannelRx, DmaChannelTx>::finishTransfer()
 		Hal::StatusFlag::CrcError |
 		Hal::StatusFlag::TiFrameError |
 		Hal::StatusFlag::ModeFault |
-%% if target.family != "h5"
+#ifdef SPI_SR_TSERF
 		Hal::StatusFlag::Reload |
-%% endif
+#endif
 		Hal::StatusFlag::Suspension
 	);
 }

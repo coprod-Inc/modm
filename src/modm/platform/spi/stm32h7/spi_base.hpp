@@ -16,6 +16,7 @@
 #ifndef MODM_STM32H7_SPI_BASE_HPP
 #define MODM_STM32H7_SPI_BASE_HPP
 
+#include <compare>
 #include <cstdint>
 #include "../device.hpp"
 #include <modm/architecture/interface/register.hpp>

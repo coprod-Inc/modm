@@ -49,9 +49,9 @@ SpiHal{{ id }}::initialize(Prescaler prescaler,
 		StatusFlag::CrcError |
 		StatusFlag::TiFrameError |
 		StatusFlag::ModeFault |
-%% if target.family != "h5"
+#ifdef SPI_SR_TSERF
 		StatusFlag::Reload |
-%% endif
+#endif
 		StatusFlag::Suspension
 	);
 
@@ -63,10 +63,18 @@ SpiHal{{ id }}::initialize(Prescaler prescaler,
 	SPI{{ id }}->CFG2 = static_cast<uint32_t>(dataMode)
 		| static_cast<uint32_t>(dataOrder)
 		| static_cast<uint32_t>(masterSelection)
+%% if target.family in ["h5"]
+		// software slave select held inactive, so the NSS pin is not needed
+		| SPI_CFG2_SSM
+%% endif
 		| SPI_CFG2_SSOE; // disable multi-master support to prevent spurious mode fault
 
 	SPI{{ id }}->CFG1 = static_cast<uint32_t>(prescaler)
 		| static_cast<uint32_t>(dataSize);
+%% if target.family in ["h5"]
+%#
+	SPI{{ id }}->CR1 = SPI_CR1_SSI;
+%% endif
 }
 
 inline void
@@ -146,7 +154,7 @@ SpiHal{{ id }}::setTransferSize(uint16_t size, uint16_t reload)
 #ifdef SPI_CR2_TSER
 	SPI{{ id }}->CR2 = (reload << SPI_CR2_TSER_Pos) | size;
 #else
-	(void) reload; // no reload on H7R/S
+	(void) reload; // no transfer reload on H5
 	SPI{{ id }}->CR2 = size;
 #endif
 }
