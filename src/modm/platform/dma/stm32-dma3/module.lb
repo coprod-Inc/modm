@@ -24,6 +24,11 @@ def prepare(module, options):
     device = options[":target"]
     if not any(device.has_driver(f"{kind}:stm32") for kind in KINDS):
         return False
+    # stm32-gpdma already provides :platform:dma for non-v2 STM32H5 GPDMA.
+    # v2 (12-channel H5E/F) is left to this driver.
+    if (device.identifier.family == "h5" and device.has_driver("gpdma") and
+            not any("v2" in d["type"] for d in device.get_all_drivers("gpdma"))):
+        return False
     module.depends(
         ":architecture:assert",
         ":architecture:interrupt",
