@@ -251,6 +251,13 @@ public:
 		return true;
 	}
 
+	/// Counter supports the center-aligned (up/down) modes, TIMx_CR1.CMS.
+	static constexpr bool
+	hasCenterAlignedMode()
+	{
+		return true;
+	}
+
 	static inline bool
 	isCountingUp()
 	{
