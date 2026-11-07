@@ -171,8 +171,9 @@ def gpdma_channels(device):
 def is_supported(device):
     if device.identifier.family != "h5" or not device.has_driver("gpdma"):
         return False
-    # FIXME: The STM32H5E/F GPDMA has 12 channels and more requests
-    return all("v2" not in d["type"] for d in device.get_all_drivers("gpdma"))
+    # FIXME: The STM32H5E/F GPDMA has 12 channels and more requests. The device data gives both
+    # variants the same driver type, so count the channel interrupts instead.
+    return set(gpdma_channels(device).values()) == {8}
 
 
 def init(module):
