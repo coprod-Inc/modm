@@ -11,6 +11,7 @@
 # -----------------------------------------------------------------------------
 
 import re
+from collections import Counter
 
 def init(module):
     module.name = ":platform:dma"
@@ -21,8 +22,11 @@ def prepare(module, options):
     device = options[":target"]
     if device.identifier.family != "h5" or not device.has_driver("gpdma"):
         return False
-    # FIXME: The STM32H5E/F GPDMA has 12 channels and more requests
-    if any("v2" in d["type"] for d in device.get_all_drivers("gpdma")):
+    # FIXME: The STM32H5E/F GPDMA has 12 channels and more requests. The device data gives both
+    # variants the same driver type, so count the channel interrupts instead.
+    channels = Counter(m.group(1) for v in device.get_driver("core")["vector"]
+                       if (m := re.fullmatch(r"GPDMA(\d)_Channel\d+", v["name"])))
+    if set(channels.values()) != {8}:
         return False
 
     module.depends(
