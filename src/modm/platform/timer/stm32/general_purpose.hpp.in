@@ -153,6 +153,26 @@ public:
 		TIM{{ id }}->CR1 |= TIM_CR1_CEN;
 	}
 
+	/**
+	 * Suppress Update event generation (CR1.UDIS=1).
+	 *
+	 * While set, overflow/underflow does not generate UEV, so ARR/CCR/PSC
+	 * preload buffers can be written as a group and loaded on the next UEV
+	 * after @ref enableUpdateEvent().
+	 */
+	static inline void
+	disableUpdateEvent()
+	{
+		TIM{{ id }}->CR1 |= TIM_CR1_UDIS;
+	}
+
+	/// Clear CR1.UDIS — next overflow/underflow generates UEV again.
+	static inline void
+	enableUpdateEvent()
+	{
+		TIM{{ id }}->CR1 &= ~TIM_CR1_UDIS;
+	}
+
 	static void
 	setMode(Mode mode,
 			SlaveMode slaveMode = SlaveMode::Disabled,
@@ -255,6 +275,13 @@ public:
 	setValue(Value value)
 	{
 		TIM{{ id }}->CNT = value;
+	}
+
+	/// Counter supports the center-aligned (up/down) modes, TIMx_CR1.CMS.
+	static constexpr bool
+	hasCenterAlignedMode()
+	{
+		return {{ "true" if id in [2, 3, 4, 5, 23, 24] else "false" }};
 	}
 
 %% if id in [15, 16, 17]
@@ -455,7 +482,7 @@ public:
 			OutputComparePreload preload = OutputComparePreload::Disable)
 	{
 		constexpr auto channel = signalToChannel<Peripheral::Tim{{ id }}, Signal>();
-		configureOutputChannel(channel, mode, compareValue, out, polarity, PinState::Disable, OutputComparePolarity::ActiveHigh, preload);
+		configureOutputChannel(channel, mode, compareValue, out, polarity, preload);
 	}
 
 	/*
