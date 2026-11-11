@@ -228,6 +228,14 @@ modm::platform::Adc{{ id }}::configureChannel(Channel channel,
 %% endif
 %% endif
 
+%% if target["family"] in ["h5"] and id == 1
+	// INP0 (PA0) only reaches the ADC1 input mux through the GPIO switch enabled by OP0
+	// (RM0481 ADC_OR); with the switch open the channel samples a floating input.
+	if (channel == Channel::Channel0) {
+		ADC1->OR = ADC1->OR | ADC_OR_OP0;
+	}
+%% endif
+
 	uint32_t tmpreg = 0;
 	if (static_cast<uint8_t>(channel) < 10) {
 		tmpreg = ADC{{ id }}->SMPR1
